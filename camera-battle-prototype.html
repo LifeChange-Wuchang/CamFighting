@@ -77,12 +77,6 @@
   }
   #modelTag{ font-size:10px; opacity:.75; }
 
-  .reticle-wrap{
-    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    width:140px; height:140px; z-index:4; pointer-events:none;
-  }
-  .reticle{width:100%; height:100%;}
-
   .result-banner{
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.94);
     z-index:16; pointer-events:none; max-width:86vw; max-height:72vh; overflow-y:auto;
@@ -140,7 +134,6 @@
     }
     .status-bar{ bottom:16px; padding:0 130px; }
     .legend{ top:56px; }
-    .reticle-wrap{ left:calc(50% - 55px); width:120px; height:120px; }
     .result-banner{ left:calc(50% - 55px); max-height:80vh; }
     .start-overlay{ padding:20px 34px; gap:10px; }
     .start-overlay h1{ font-size:18px; }
@@ -188,14 +181,7 @@
       <span id="modelTag"></span>
     </div>
 
-    <div class="reticle-wrap">
-      <svg class="reticle" viewBox="0 0 150 150">
-        <circle cx="75" cy="75" r="46" fill="none" stroke="#9CA8B4" stroke-width="2"/>
-        <path d="M75 8 L75 28 M75 122 L75 142 M8 75 L28 75 M122 75 L142 75" stroke="#9CA8B4" stroke-width="2.5" stroke-linecap="round"/>
-      </svg>
-    </div>
-
-    <div class="status-bar"><div class="status-text">瞄準對方額頭,按快門拍一張判定</div></div>
+    <div class="status-bar"><div class="status-text">把準星對準對方的臉,按快門判定</div></div>
 
     <div class="dismiss-layer hidden" id="dismissLayer"></div>
     <div class="result-banner" id="resultBanner">
@@ -211,7 +197,7 @@
 
   <div class="start-overlay" id="startOverlay">
     <h1>相機對戰 · 偵測原型</h1>
-    <p>瞄準對方額頭、按快門拍一張——同時是人臉、又是敵隊頭巾顏色,才算一次有效擊中。判定後會定格並顯示偵測數據,方便你調參數。</p>
+    <p>把準星對準對方的臉再按快門——只有準星範圍內的臉才會被判定。同時是人臉、又是敵隊頭巾顏色,才算一次有效擊中。</p>
     <p>請允許相機權限。橫向直向都可以使用。</p>
     <button class="start-btn" id="startBtn">開始遊戲</button>
     <div class="error-text hidden" id="errorText"></div>
@@ -252,7 +238,12 @@ const MODELS = {
   full:  { name:'full range',  url:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite' },
   short: { name:'short range', url:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite' }
 };
-const ZOOM = 2;   // 全畫面找不到臉時,改用中央裁切放大再找一次(數位變焦)
+// 只判定準星範圍:準星框佔畫面短邊的比例
+const AIM_FRACTION = 0.40;
+// 實際送去偵測的裁切範圍比準星再大一些,避免臉稍微超出準星就整個偵測不到
+const CROP_EXPAND = 1.9;
+// 裁切後統一放大到這個尺寸再送進模型,等同把解析度集中在目標上
+const DETECT_SIZE = 640;
 
 let myTeam = 'red';
 let enemyTeam = 'blue';
@@ -336,6 +327,44 @@ function syncCanvasSize(){
   }
 }
 
+// 準星框(以影像座標計算)。準星直接畫在畫布上,所以「看到的範圍」
+// 和「實際判定的範圍」保證完全一致,不會因為畫面裁切而對不上。
+function getAimBox(){
+  const side = Math.round(Math.min(canvas.width, canvas.height) * AIM_FRACTION);
+  return {
+    x: Math.round((canvas.width - side) / 2),
+    y: Math.round((canvas.height - side) / 2),
+    side
+  };
+}
+
+function drawReticle(){
+  const a = getAimBox();
+  const lw = Math.max(2, Math.round(canvas.width * 0.0035));
+  const arm = Math.round(a.side * 0.22);
+  ctx.strokeStyle = 'rgba(231,236,242,.9)';
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  const corners = [
+    [a.x, a.y, 1, 1],
+    [a.x + a.side, a.y, -1, 1],
+    [a.x, a.y + a.side, 1, -1],
+    [a.x + a.side, a.y + a.side, -1, -1]
+  ];
+  for (const [px, py, dx, dy] of corners){
+    ctx.beginPath();
+    ctx.moveTo(px + dx*arm, py);
+    ctx.lineTo(px, py);
+    ctx.lineTo(px, py + dy*arm);
+    ctx.stroke();
+  }
+  // 中心點
+  ctx.fillStyle = 'rgba(231,236,242,.75)';
+  ctx.beginPath();
+  ctx.arc(a.x + a.side/2, a.y + a.side/2, Math.max(2, lw*0.9), 0, Math.PI*2);
+  ctx.fill();
+}
+
 async function initCamera(){
   mediaStream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: 'environment' }, width:{ideal:1280}, height:{ideal:720} },
@@ -384,6 +413,7 @@ function previewLoop(){
   if (previewPaused || video.readyState < 2) return;
   syncCanvasSize();
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  drawReticle();
 }
 
 function flashScreen(){
@@ -392,64 +422,92 @@ function flashScreen(){
   flash.classList.add('flash-anim');
 }
 
-// 第二次嘗試:把畫面中央裁切放大後再偵測,等同數位變焦,讓遠一點的臉變大
-function detectZoomed(){
-  const cw = Math.round(canvas.width / ZOOM);
-  const ch = Math.round(canvas.height / ZOOM);
-  const ox = Math.round((canvas.width - cw) / 2);
-  const oy = Math.round((canvas.height - ch) / 2);
-  zoomCanvas.width = canvas.width;
-  zoomCanvas.height = canvas.height;
-  zctx.drawImage(video, ox, oy, cw, ch, 0, 0, canvas.width, canvas.height);
+// 只把準星附近裁切出來、放大後送去偵測,解析度集中在目標上,
+// 遠一點的臉也比較抓得到。回傳的座標會換算回原始畫面座標。
+function detectInAimArea(){
+  const aim = getAimBox();
+  const centerX = aim.x + aim.side/2;
+  const centerY = aim.y + aim.side/2;
+
+  let cropSide = Math.round(aim.side * CROP_EXPAND);
+  cropSide = Math.min(cropSide, canvas.width, canvas.height);
+  let cx = Math.round(centerX - cropSide/2);
+  let cy = Math.round(centerY - cropSide/2);
+  cx = Math.max(0, Math.min(cx, canvas.width  - cropSide));
+  cy = Math.max(0, Math.min(cy, canvas.height - cropSide));
+
+  // 輸出尺寸至少和裁切範圍一樣大,確保高解析度相機不會反而被縮小、損失畫質
+  const outSize = Math.max(DETECT_SIZE, cropSide);
+  zoomCanvas.width = outSize;
+  zoomCanvas.height = outSize;
+  zctx.drawImage(video, cx, cy, cropSide, cropSide, 0, 0, outSize, outSize);
+
   const res = faceDetector.detectForVideo(zoomCanvas, nextTs());
-  return (res.detections || []).map(d => ({
-    boundingBox: {
-      originX: ox + d.boundingBox.originX / ZOOM,
-      originY: oy + d.boundingBox.originY / ZOOM,
-      width:  d.boundingBox.width / ZOOM,
-      height: d.boundingBox.height / ZOOM
-    }
+  const scale = outSize / cropSide;
+  const boxes = (res.detections || []).map(d => ({
+    originX: cx + d.boundingBox.originX / scale,
+    originY: cy + d.boundingBox.originY / scale,
+    width:   d.boundingBox.width  / scale,
+    height:  d.boundingBox.height / scale
   }));
+
+  // 只採用「中心點落在準星框內」的臉,旁邊的路人不算
+  const inAim = boxes.filter(b => {
+    const fx = b.originX + b.width/2;
+    const fy = b.originY + b.height/2;
+    return fx >= aim.x && fx <= aim.x + aim.side &&
+           fy >= aim.y && fy <= aim.y + aim.side;
+  });
+
+  // 準星內若有多張臉,取最靠近準星中心的那一張
+  inAim.sort((p, q) => {
+    const dp = Math.hypot(p.originX + p.width/2 - centerX, p.originY + p.height/2 - centerY);
+    const dq = Math.hypot(q.originX + q.width/2 - centerX, q.originY + q.height/2 - centerY);
+    return dp - dq;
+  });
+
+  return { aim, inAim, nearbyCount: boxes.length - inAim.length };
 }
 
 function evaluateShot(){
-  let detections = (faceDetector.detectForVideo(video, nextTs()).detections) || [];
-  let usedZoom = false;
-  if (!detections.length){
-    detections = detectZoomed();
-    usedZoom = detections.length > 0;
-  }
+  // 先重畫一張乾淨的畫面(不含準星線條),避免取樣顏色時取到準星的白線
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  const zoomNote = usedZoom ? '(靠中央放大才找到)' : '';
+  const { aim, inAim, nearbyCount } = detectInAimArea();
+  const nearbyNote = nearbyCount > 0 ? `<br>準星外另有 ${nearbyCount} 張臉,已忽略` : '';
 
-  if (!detections.length){
+  if (!inAim.length){
+    drawReticle();
     return { hit:false, title:'❌ 沒有擊中',
-      detail:`畫面中沒有偵測到人臉<br>模型:${activeModel}<br>已試過全畫面與中央放大兩種方式` };
+      detail:`準星範圍內沒有偵測到人臉${nearbyNote}<br>模型:${activeModel}<br>請把準星對準對方的臉再拍` };
   }
 
-  const box = detections[0].boundingBox;
-  ctx.strokeStyle = 'rgba(231,236,242,.8)';
-  ctx.lineWidth = 3;
+  const box = inAim[0];
+  const facePct = ((box.width / canvas.width) * 100).toFixed(0);
+
+  ctx.strokeStyle = 'rgba(231,236,242,.85)';
+  ctx.lineWidth = Math.max(2, Math.round(canvas.width * 0.004));
   ctx.strokeRect(box.originX, box.originY, box.width, box.height);
 
-  const facePct = ((box.width / canvas.width) * 100).toFixed(0);
   const sample = sampleColorNearForehead(box);
   if (!sample){
+    drawReticle();
     return { hit:false, title:'❌ 沒有擊中',
-      detail:`偵測到 ${detections.length} 張臉${zoomNote},但額頭位置超出畫面,無法取樣` };
+      detail:`準星內偵測到 ${inAim.length} 張臉,但額頭位置超出畫面,無法取樣${nearbyNote}` };
   }
 
   const [h,s,v] = rgbToHsv(sample.r, sample.g, sample.b);
   const hit = matchesTeamColor(h,s,v,enemyTeam);
 
   ctx.strokeStyle = hit ? (enemyTeam==='red' ? '#FF4757' : '#3D8BFF') : 'rgba(255,255,255,.65)';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = Math.max(2, Math.round(canvas.width * 0.004));
   ctx.strokeRect(sample.rect.sx, sample.rect.sy, sample.rect.sw, sample.rect.sh);
+  drawReticle();
 
   const rgbCss = `rgb(${Math.round(sample.r)},${Math.round(sample.g)},${Math.round(sample.b)})`;
   const def = TEAM_COLORS[enemyTeam];
   const detail =
-    `偵測到 ${detections.length} 張臉${zoomNote} · 臉寬約畫面 ${facePct}%<br>` +
+    `準星內偵測到 ${inAim.length} 張臉 · 臉寬約畫面 ${facePct}%${nearbyNote}<br>` +
     `<span class="swatch" style="background:${rgbCss}"></span>額頭取樣色 ${rgbCss}<br>` +
     `色相 ${h.toFixed(0)}° · 飽和 ${s.toFixed(2)} · 亮度 ${v.toFixed(2)}<br>` +
     `${def.label}門檻:色相 ${def.hueRanges.map(r=>r.join('-')).join(' 或 ')} · 飽和≥${def.sat} · 亮度≥${def.val}`;

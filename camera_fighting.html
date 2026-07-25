@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#0B0E13">
-  <title>相機對戰 · 射擊原型</title>
+  <title>相機對戰 · 射擊原型 (橫豎雙支援)</title>
   <style>
     :root {
       --void: #0B0E13;
@@ -70,6 +70,7 @@
       padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px;
       background: linear-gradient(to bottom, rgba(11, 14, 19, .85), transparent);
       z-index: 5;
+      transition: all 0.3s ease;
     }
 
     .team-toggle {
@@ -184,40 +185,52 @@
       transition: stroke .15s ease;
     }
 
-    /* 底部狀態與開火區 */
-    .bottom-controls {
+    /* 底部狀態文字 (獨立出來，橫豎都置中) */
+    .status-bar {
       position: absolute;
       left: 0;
       right: 0;
-      bottom: 0;
-      padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
-      background: linear-gradient(to top, rgba(11, 14, 19, .95) 10%, transparent);
+      bottom: 32px;
+      text-align: center;
       z-index: 5;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
       pointer-events: none;
     }
 
     .status-text {
       font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
-      font-size: 14px;
+      font-size: 15px;
       letter-spacing: .04em;
       color: var(--neutral);
       min-height: 20px;
-      text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 6px 12px;
+      border-radius: 999px;
+      display: inline-block;
       transition: color 0.2s;
     }
 
-    /* 開火按鈕 (板機) */
+    /* 開火按鈕區 (直向：置中底部 / 橫向：置中右側) */
+    .controls-area {
+      position: absolute;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 70px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
     .shoot-btn-wrap {
-      width: 72px;
-      height: 72px;
+      width: 76px;
+      height: 76px;
       border-radius: 50%;
-      border: 3px solid #FFF;
+      border: 4px solid rgba(255, 255, 255, 0.8);
       padding: 4px;
       pointer-events: auto;
+      background: rgba(0, 0, 0, 0.2);
     }
 
     .shoot-btn {
@@ -238,9 +251,21 @@
       background: var(--hit);
     }
 
-    /* 鎖定敵人時變色 */
+    /* 橫向螢幕 (Landscape) 的版面調整 */
+    @media (orientation: landscape) {
+      .controls-area {
+        bottom: 50%;
+        left: auto;
+        right: calc(env(safe-area-inset-right, 0px) + 32px);
+        transform: translateY(50%);
+      }
 
-    /* 遊戲介面 Overlay (開始 / 結束) */
+      .status-bar {
+        bottom: 16px;
+      }
+    }
+
+    /* 遊戲介面 Overlay */
     .overlay-screen {
       position: absolute;
       inset: 0;
@@ -303,7 +328,7 @@
       position: absolute;
       inset: 0;
       background: white;
-      z-index: 10;
+      z-index: 15;
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.1s ease-out;
@@ -340,6 +365,7 @@
 
     <div class="legend hidden" id="legend"><span id="legendText">尋找配戴「藍隊」頭巾的敵方臉孔</span></div>
 
+    <!-- 瞄準準星 -->
     <div class="reticle-wrap hidden" id="reticle">
       <svg class="reticle" viewBox="0 0 150 150" id="reticleSvg">
         <circle cx="75" cy="75" r="46" fill="none" stroke="#9CA8B4" stroke-width="2" />
@@ -348,8 +374,13 @@
       </svg>
     </div>
 
-    <div class="bottom-controls hidden" id="bottomControls">
+    <!-- 狀態提示字 -->
+    <div class="status-bar hidden" id="statusBar">
       <div class="status-text" id="statusText">準備中…</div>
+    </div>
+
+    <!-- 射擊按鈕 -->
+    <div class="controls-area hidden" id="controlsArea">
       <div class="shoot-btn-wrap">
         <button class="shoot-btn" id="shootBtn"></button>
       </div>
@@ -358,8 +389,8 @@
     <!-- 開始畫面 -->
     <div class="overlay-screen" id="startOverlay">
       <h1>相機對戰 · 射擊測試</h1>
-      <p>手動開火機制：準星對準配戴敵隊顏色標記的臉部時，按下下方快門按鈕進行射擊！</p>
-      <p style="font-size: 13px; color: var(--hit);">※ 為了省電與防止手機發熱，切換分頁或縮小網頁時，相機會自動關閉。</p>
+      <p>手動開火機制：準星對準敵方標記臉部時，按下快門進行射擊！</p>
+      <p style="font-size: 13px; color: var(--hit);">※ 支援直向與橫向螢幕遊玩。切換分頁或關閉螢幕時，相機會自動暫停省電。</p>
       <button class="action-btn" id="startBtn">啟動相機</button>
       <div class="error-text hidden" id="errorText"></div>
     </div>
@@ -370,12 +401,12 @@
     const canvas = document.getElementById('overlay');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
-    // UI 元素
     const startOverlay = document.getElementById('startOverlay');
     const hud = document.getElementById('hud');
     const legend = document.getElementById('legend');
     const reticleUI = document.getElementById('reticle');
-    const bottomControls = document.getElementById('bottomControls');
+    const statusBar = document.getElementById('statusBar');
+    const controlsArea = document.getElementById('controlsArea');
 
     const startBtn = document.getElementById('startBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -388,29 +419,27 @@
     const reticleSvg = document.getElementById('reticleSvg');
     const teamBtns = document.querySelectorAll('.team-btn');
 
-    // 遊戲狀態變數
     let myTeam = 'red';
     let enemyTeam = 'blue';
     let hitCount = 0;
     let isPlaying = false;
     let animationFrameId = null;
 
-    // 偵測變數
     let faceDetector = null;
     let frameCounter = 0;
     let lastDetections = [];
     let lastEnemySeen = false;
     let lastSampleRect = null;
 
+    // 顏色設定維持寬鬆門檻，讓翻拍螢幕時的顏色流失也不會被擋下
     const TEAM_COLORS = {
-      red: { label: '紅隊', hueRanges: [[0, 25], [335, 360]], sat: 0.20, val: 0.20 },
-      blue: { label: '藍隊', hueRanges: [[190, 260]], sat: 0.20, val: 0.20 }
+      red: { label: '紅隊', hueRanges: [[0, 30], [330, 360]], sat: 0.15, val: 0.15 },
+      blue: { label: '藍隊', hueRanges: [[190, 260]], sat: 0.15, val: 0.15 }
     };
 
-    // 切換隊伍
     teamBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        if (isPlaying) return; // 遊戲中不給換隊
+        if (isPlaying) return;
         myTeam = btn.dataset.team;
         enemyTeam = myTeam === 'red' ? 'blue' : 'red';
         teamBtns.forEach(b => b.dataset.active = (b.dataset.team === myTeam) ? 'true' : 'false');
@@ -440,10 +469,11 @@
     }
 
     function sampleColorNearForehead(box) {
-      const sx = Math.max(0, Math.round(box.originX));
-      const sy = Math.max(0, Math.round(box.originY - box.height * 0.4));
-      const sw = Math.min(canvas.width - sx, Math.round(box.width));
-      const sh = Math.min(canvas.height - sy, Math.round(box.height * 0.4));
+      // 【關鍵修復】: 把取樣框縮小並集中在額頭正中央，避免吸收到照片/螢幕的背景色
+      const sx = Math.max(0, Math.round(box.originX + box.width * 0.2));
+      const sy = Math.max(0, Math.round(box.originY - box.height * 0.35));
+      const sw = Math.min(canvas.width - sx, Math.round(box.width * 0.6));
+      const sh = Math.min(canvas.height - sy, Math.round(box.height * 0.35));
 
       if (sw <= 1 || sh <= 1) return null;
 
@@ -452,7 +482,7 @@
       catch (e) { return null; }
 
       let r = 0, g = 0, b = 0, n = 0;
-      for (let i = 0; i < data.length; i += 16) { // 每4像素取樣
+      for (let i = 0; i < data.length; i += 16) {
         r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
       }
       if (!n) return null;
@@ -471,7 +501,6 @@
       canvas.height = video.videoHeight;
     }
 
-    // 徹底關閉相機 (防發熱核心)
     function stopCamera() {
       if (video.srcObject) {
         video.srcObject.getTracks().forEach(track => track.stop());
@@ -486,12 +515,14 @@
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
       );
       faceDetector = await FaceDetector.createFromOptions(vision, {
+        // 依然使用 full_range 保留遠距離優勢
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite",
           delegate: "GPU"
         },
         runningMode: "VIDEO",
-        minDetectionConfidence: 0.4
+        // 【關鍵修復】: 大幅調低判定門檻 (0.5 -> 0.25)，螢幕翻拍照片更容易被辨識為人臉
+        minDetectionConfidence: 0.25
       });
     }
 
@@ -524,7 +555,7 @@
         setReticle('#E7ECF2');
         shootBtn.classList.remove('enemy-locked');
         statusText.textContent = '偵測到人臉，未發現敵隊標記';
-        statusText.style.color = 'var(--neutral)';
+        statusText.style.color = '#FFF';
       } else {
         setReticle('#9CA8B4');
         shootBtn.classList.remove('enemy-locked');
@@ -537,6 +568,12 @@
       if (!isPlaying) return;
       animationFrameId = requestAnimationFrame(renderLoop);
       if (video.readyState < 2) return;
+
+      // 【關鍵修復】動態校正畫布尺寸 (當手機從直轉橫時，長寬會反轉，這裡即時捕捉並套用)
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
 
       frameCounter++;
       if (faceDetector && frameCounter % 3 === 0) {
@@ -573,17 +610,14 @@
         statusText.textContent = '載入模型中…';
         await initFaceDetector();
 
-        // (可選) 在這裡把 hitCount = 0 若你想每次啟動都歸零
-        // hitCount = 0; hitCountEl.textContent = hitCount;
-
         isPlaying = true;
 
-        // 切換介面
         startOverlay.classList.add('hidden');
         hud.classList.remove('hidden');
         legend.classList.remove('hidden');
         reticleUI.classList.remove('hidden');
-        bottomControls.classList.remove('hidden');
+        statusBar.classList.remove('hidden');
+        controlsArea.classList.remove('hidden');
 
         renderLoop();
       } catch (err) {
@@ -595,28 +629,26 @@
       }
     }
 
-    // 結束/暫停遊戲
     function stopGame(isAuto = false) {
       if (!isPlaying) return;
       isPlaying = false;
       cancelAnimationFrame(animationFrameId);
 
-      // 切斷相機電源，徹底防發熱
       stopCamera();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 藏起遊戲介面，顯示開始畫面
       hud.classList.add('hidden');
       legend.classList.add('hidden');
       reticleUI.classList.add('hidden');
-      bottomControls.classList.add('hidden');
+      statusBar.classList.add('hidden');
+      controlsArea.classList.add('hidden');
       startOverlay.classList.remove('hidden');
 
       startBtn.disabled = false;
       if (isAuto) {
         startBtn.textContent = '繼續 (之前已自動暫停)';
         errorText.textContent = '偵測到離開畫面，相機已自動關閉以節省電量。';
-        errorText.style.color = 'var(--hit)'; // 綠/黃色提示
+        errorText.style.color = 'var(--hit)';
         errorText.classList.remove('hidden');
       } else {
         startBtn.textContent = '重新啟動相機';
@@ -624,21 +656,13 @@
       }
     }
 
-    // --- 事件綁定 ---
-
     startBtn.addEventListener('click', startGame);
-
-    // 手動結束按鈕
     stopBtn.addEventListener('click', () => stopGame(false));
 
-    // 【重點】Page Visibility API - 當網頁縮小、切換分頁或關閉螢幕時，立刻斷開相機！
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && isPlaying) {
-        stopGame(true);
-      }
+      if (document.hidden && isPlaying) stopGame(true);
     });
 
-    // 射擊 (板機) 處理
     shootBtn.addEventListener('click', () => {
       if (!isPlaying) return;
 
@@ -654,7 +678,7 @@
         shootBtn.style.background = 'var(--hit)';
         setTimeout(() => shootBtn.style.background = '', 200);
       } else {
-        statusText.textContent = '❌ Miss! (未瞄準敵方標記)';
+        statusText.textContent = '❌ Miss! (未鎖定敵方標記)';
         statusText.style.color = 'var(--red)';
       }
     });

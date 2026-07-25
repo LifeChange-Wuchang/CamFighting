@@ -36,14 +36,12 @@
   @keyframes flashPop{ 0%{opacity:.8;} 100%{opacity:0;} }
 
   .hidden{ display:none !important; }
-
-  /* 拍照定格時蓋上的透明層,點一下可提前關掉結果 */
   .dismiss-layer{ position:absolute; inset:0; z-index:14; }
 
   .hud-top{
     position:absolute; top:0; left:0; right:0;
     display:flex; align-items:center; justify-content:space-between; gap:8px;
-    padding:calc(env(safe-area-inset-top,0px) + 12px) calc(env(safe-area-inset-left,0px) + 14px) 12px calc(env(safe-area-inset-right,0px) + 14px);
+    padding:calc(env(safe-area-inset-top,0px) + 12px) calc(env(safe-area-inset-right,0px) + 14px) 12px calc(env(safe-area-inset-left,0px) + 14px);
     background:linear-gradient(to bottom, rgba(11,14,19,.85), transparent);
     z-index:5;
   }
@@ -69,13 +67,15 @@
 
   .legend{
     position:absolute; top:60px; left:0; right:0; z-index:5;
-    display:flex; justify-content:center; pointer-events:none; padding:0 12px;
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+    pointer-events:none; padding:0 12px;
   }
   .legend span{
     font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
     font-size:11px; color:var(--neutral); background:rgba(21,26,33,.75);
     padding:5px 10px; border-radius:6px; border:1px solid rgba(255,255,255,.1);
   }
+  #modelTag{ font-size:10px; opacity:.75; }
 
   .reticle-wrap{
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
@@ -85,7 +85,7 @@
 
   .result-banner{
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%) scale(.94);
-    z-index:16; pointer-events:none; max-width:86vw;
+    z-index:16; pointer-events:none; max-width:86vw; max-height:72vh; overflow-y:auto;
     font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
     text-align:center; padding:14px 18px; border-radius:12px;
     background:rgba(11,14,19,.92); border:1.5px solid rgba(255,255,255,.15);
@@ -99,6 +99,7 @@
   .result-detail{
     margin-top:9px; padding-top:9px; border-top:1px solid rgba(255,255,255,.12);
     font-size:11px; line-height:1.7; color:var(--neutral); letter-spacing:.02em;
+    word-break:break-word;
   }
   .swatch{
     display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px;
@@ -132,7 +133,6 @@
     font-size:12px; letter-spacing:.03em; color:var(--neutral);
   }
 
-  /* ---- 橫向模式:快門移到右側,避開下方安全區 ---- */
   @media (orientation: landscape){
     .shutter-wrap{
       left:auto; bottom:50%; right:calc(env(safe-area-inset-right,0px) + 26px);
@@ -141,7 +141,7 @@
     .status-bar{ bottom:16px; padding:0 130px; }
     .legend{ top:56px; }
     .reticle-wrap{ left:calc(50% - 55px); width:120px; height:120px; }
-    .result-banner{ left:calc(50% - 55px); }
+    .result-banner{ left:calc(50% - 55px); max-height:80vh; }
     .start-overlay{ padding:20px 34px; gap:10px; }
     .start-overlay h1{ font-size:18px; }
     .start-overlay p{ font-size:12.5px; line-height:1.6; max-width:520px; }
@@ -183,7 +183,10 @@
       </div>
     </div>
 
-    <div class="legend"><span id="legendText">尋找配戴「藍隊」頭巾的敵方臉孔</span></div>
+    <div class="legend">
+      <span id="legendText">尋找配戴「藍隊」頭巾的敵方臉孔</span>
+      <span id="modelTag"></span>
+    </div>
 
     <div class="reticle-wrap">
       <svg class="reticle" viewBox="0 0 150 150">
@@ -208,7 +211,7 @@
 
   <div class="start-overlay" id="startOverlay">
     <h1>相機對戰 · 偵測原型</h1>
-    <p>瞄準對方額頭、按快門拍一張——同時是人臉、又是敵隊頭巾顏色,才算一次有效擊中。判定後會停留在定格畫面並顯示偵測數據,方便你調整參數。</p>
+    <p>瞄準對方額頭、按快門拍一張——同時是人臉、又是敵隊頭巾顏色,才算一次有效擊中。判定後會定格並顯示偵測數據,方便你調參數。</p>
     <p>請允許相機權限。橫向直向都可以使用。</p>
     <button class="start-btn" id="startBtn">開始遊戲</button>
     <div class="error-text hidden" id="errorText"></div>
@@ -237,24 +240,36 @@ const endBtn = document.getElementById('endBtn');
 const shutterBtn = document.getElementById('shutterBtn');
 const hitCountEl = document.getElementById('hitCount');
 const legendText = document.getElementById('legendText');
+const modelTag = document.getElementById('modelTag');
 const resultBanner = document.getElementById('resultBanner');
 const resultTitle = document.getElementById('resultTitle');
 const resultDetail = document.getElementById('resultDetail');
 const dismissLayer = document.getElementById('dismissLayer');
 const teamBtns = document.querySelectorAll('.team-btn');
 
+const MP_VERSION = '0.10.35';   // 0.10.0 太舊,不支援 full_range 模型(會出現 2304 vs 896 錯誤)
+const MODELS = {
+  full:  { name:'full range',  url:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite' },
+  short: { name:'short range', url:'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite' }
+};
+const ZOOM = 2;   // 全畫面找不到臉時,改用中央裁切放大再找一次(數位變焦)
+
 let myTeam = 'red';
 let enemyTeam = 'blue';
 let hitCount = 0;
+let visionFileset = null;
 let faceDetector = null;
+let activeModel = '';
 let mediaStream = null;
 let animId = null;
 let previewPaused = false;
 let shotBusy = false;
-let lastTimestamp = 0;   // MediaPipe 要求送進去的時間戳必須遞增
+let tsCounter = 0;
+
+const zoomCanvas = document.createElement('canvas');
+const zctx = zoomCanvas.getContext('2d', { willReadFrequently: true });
 
 // 兩隊的顏色定義:色相(Hue)範圍 + 最低飽和度/亮度門檻。
-// 色相判斷比亮度判斷更耐燈光變化,陰影下通常還是分得出紅/藍。
 // 正式使用前務必用實際頭巾材質、在活動當天的燈光下重新測試這幾個數字。
 const TEAM_COLORS = {
   red:  { label: '紅隊', hueRanges: [[0,18], [342,360]], sat: 0.35, val: 0.28 },
@@ -269,6 +284,12 @@ teamBtns.forEach(btn => {
     legendText.textContent = `尋找配戴「${TEAM_COLORS[enemyTeam].label}」頭巾的敵方臉孔`;
   });
 });
+
+// MediaPipe 要求時間戳嚴格遞增,所有偵測共用同一個來源
+function nextTs(){
+  tsCounter = Math.max(tsCounter + 1, Math.round(performance.now()));
+  return tsCounter;
+}
 
 function rgbToHsv(r, g, b){
   r/=255; g/=255; b/=255;
@@ -292,7 +313,6 @@ function matchesTeamColor(h,s,v,teamKey){
 }
 
 function sampleColorNearForehead(box){
-  // 取樣區塊在偵測框「上方」,對應額頭/頭巾的位置。
   const sx = Math.max(0, Math.round(box.originX + box.width*0.15));
   const sy = Math.max(0, Math.round(box.originY - box.height*0.35));
   const sw = Math.min(canvas.width - sx, Math.round(box.width*0.7));
@@ -327,25 +347,42 @@ async function initCamera(){
   syncCanvasSize();
 }
 
-async function initFaceDetector(){
-  const { FaceDetector, FilesetResolver } = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0");
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
-  );
-  faceDetector = await FaceDetector.createFromOptions(vision, {
-    baseOptions: {
-      // full_range 模型,比 short_range 更適合抓中遠距離的臉。
-      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite",
-      delegate: "GPU"
-    },
-    runningMode: "VIDEO"
+// 建立偵測器並「試跑一次」,確認這個環境真的跑得動這個模型
+async function buildDetector(FaceDetector, modelKey){
+  const det = await FaceDetector.createFromOptions(visionFileset, {
+    baseOptions: { modelAssetPath: MODELS[modelKey].url, delegate: 'GPU' },
+    runningMode: 'VIDEO',
+    minDetectionConfidence: 0.35   // 放寬一點,較遠/較小的臉也抓得到
   });
+  const probe = document.createElement('canvas');
+  probe.width = 256; probe.height = 256;
+  const pctx = probe.getContext('2d');
+  pctx.fillStyle = '#808080';
+  pctx.fillRect(0,0,256,256);
+  det.detectForVideo(probe, nextTs());   // 不相容的話會在這裡丟錯,而不是等你按快門才爆
+  return det;
+}
+
+async function initFaceDetector(){
+  const { FaceDetector, FilesetResolver } = await import(`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`);
+  visionFileset = await FilesetResolver.forVisionTasks(
+    `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm`
+  );
+  try {
+    faceDetector = await buildDetector(FaceDetector, 'full');
+    activeModel = MODELS.full.name;
+  } catch (err){
+    console.warn('full range 模型不可用,自動改用 short range:', err);
+    faceDetector = await buildDetector(FaceDetector, 'short');
+    activeModel = MODELS.short.name + '(full range 不支援,已自動退回)';
+  }
+  modelTag.textContent = `模型:${activeModel}`;
 }
 
 function previewLoop(){
   animId = requestAnimationFrame(previewLoop);
   if (previewPaused || video.readyState < 2) return;
-  syncCanvasSize();   // 轉向後鏡頭解析度若改變,這裡會自動跟上
+  syncCanvasSize();
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 }
 
@@ -355,16 +392,39 @@ function flashScreen(){
   flash.classList.add('flash-anim');
 }
 
-function evaluateShot(){
-  // 時間戳必須嚴格遞增,否則 MediaPipe 會丟出錯誤
-  let ts = Math.round(performance.now());
-  if (ts <= lastTimestamp) ts = lastTimestamp + 1;
-  lastTimestamp = ts;
+// 第二次嘗試:把畫面中央裁切放大後再偵測,等同數位變焦,讓遠一點的臉變大
+function detectZoomed(){
+  const cw = Math.round(canvas.width / ZOOM);
+  const ch = Math.round(canvas.height / ZOOM);
+  const ox = Math.round((canvas.width - cw) / 2);
+  const oy = Math.round((canvas.height - ch) / 2);
+  zoomCanvas.width = canvas.width;
+  zoomCanvas.height = canvas.height;
+  zctx.drawImage(video, ox, oy, cw, ch, 0, 0, canvas.width, canvas.height);
+  const res = faceDetector.detectForVideo(zoomCanvas, nextTs());
+  return (res.detections || []).map(d => ({
+    boundingBox: {
+      originX: ox + d.boundingBox.originX / ZOOM,
+      originY: oy + d.boundingBox.originY / ZOOM,
+      width:  d.boundingBox.width / ZOOM,
+      height: d.boundingBox.height / ZOOM
+    }
+  }));
+}
 
-  const result = faceDetector.detectForVideo(video, ts);
-  const detections = result.detections || [];
+function evaluateShot(){
+  let detections = (faceDetector.detectForVideo(video, nextTs()).detections) || [];
+  let usedZoom = false;
   if (!detections.length){
-    return { hit:false, title:'❌ 沒有擊中', detail:'畫面中沒有偵測到人臉' };
+    detections = detectZoomed();
+    usedZoom = detections.length > 0;
+  }
+
+  const zoomNote = usedZoom ? '(靠中央放大才找到)' : '';
+
+  if (!detections.length){
+    return { hit:false, title:'❌ 沒有擊中',
+      detail:`畫面中沒有偵測到人臉<br>模型:${activeModel}<br>已試過全畫面與中央放大兩種方式` };
   }
 
   const box = detections[0].boundingBox;
@@ -372,9 +432,11 @@ function evaluateShot(){
   ctx.lineWidth = 3;
   ctx.strokeRect(box.originX, box.originY, box.width, box.height);
 
+  const facePct = ((box.width / canvas.width) * 100).toFixed(0);
   const sample = sampleColorNearForehead(box);
   if (!sample){
-    return { hit:false, title:'❌ 沒有擊中', detail:`偵測到 ${detections.length} 張臉,但額頭位置超出畫面,無法取樣` };
+    return { hit:false, title:'❌ 沒有擊中',
+      detail:`偵測到 ${detections.length} 張臉${zoomNote},但額頭位置超出畫面,無法取樣` };
   }
 
   const [h,s,v] = rgbToHsv(sample.r, sample.g, sample.b);
@@ -387,7 +449,7 @@ function evaluateShot(){
   const rgbCss = `rgb(${Math.round(sample.r)},${Math.round(sample.g)},${Math.round(sample.b)})`;
   const def = TEAM_COLORS[enemyTeam];
   const detail =
-    `偵測到 ${detections.length} 張臉<br>` +
+    `偵測到 ${detections.length} 張臉${zoomNote} · 臉寬約畫面 ${facePct}%<br>` +
     `<span class="swatch" style="background:${rgbCss}"></span>額頭取樣色 ${rgbCss}<br>` +
     `色相 ${h.toFixed(0)}° · 飽和 ${s.toFixed(2)} · 亮度 ${v.toFixed(2)}<br>` +
     `${def.label}門檻:色相 ${def.hueRanges.map(r=>r.join('-')).join(' 或 ')} · 飽和≥${def.sat} · 亮度≥${def.val}`;
@@ -419,16 +481,16 @@ function takeShot(){
   if (shotBusy || !faceDetector) return;
   shotBusy = true;
   shutterBtn.disabled = true;
-  previewPaused = true;   // 定格當下畫面,像真的拍了一張
+  previewPaused = true;
   flashScreen();
 
   let res;
   try {
     res = evaluateShot();
   } catch (err){
-    // 任何偵測錯誤都要有結果,絕不能讓畫面卡在定格狀態
     console.error('偵測失敗:', err);
-    res = { hit:false, title:'⚠️ 偵測失敗', detail:'判定時發生錯誤,請再試一次<br>' + (err && err.message ? err.message : '') };
+    res = { hit:false, title:'⚠️ 偵測失敗',
+      detail:'判定時發生錯誤,請再試一次<br>' + (err && err.message ? err.message : '') };
   }
   showResult(res);
 
@@ -467,7 +529,7 @@ async function startGame(){
       throw new Error('相機權限需要在 https 網址下才能使用,請確認網址是 https 開頭。');
     }
     await initCamera();
-    if (!faceDetector){          // 模型只載入一次,重新開始時直接沿用
+    if (!faceDetector){
       startBtn.textContent = '載入偵測模型中…';
       await initFaceDetector();
     }
@@ -481,7 +543,6 @@ async function startGame(){
     errorText.textContent = '啟動失敗:' + (err && err.message ? err.message : '無法取得相機權限,請確認已允許相機存取。');
     errorText.classList.remove('hidden');
   } finally {
-    // 不論成功失敗都把按鈕復原,否則重新開始時會按不下去
     startBtn.disabled = false;
     startBtn.textContent = '開始遊戲';
   }
@@ -509,7 +570,6 @@ restartBtn.addEventListener('click', () => {
 
 startBtn.addEventListener('click', startGame);
 
-// 轉向時重新對齊畫布尺寸
 window.addEventListener('orientationchange', () => setTimeout(syncCanvasSize, 300));
 window.addEventListener('resize', syncCanvasSize);
 </script>

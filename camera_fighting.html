@@ -65,7 +65,7 @@
       left: 0;
       right: 0;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
       padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 14px;
       background: linear-gradient(to bottom, rgba(11, 14, 19, .85), transparent);
@@ -74,6 +74,7 @@
 
     .team-toggle {
       display: flex;
+      flex-direction: column;
       gap: 8px;
     }
 
@@ -87,6 +88,7 @@
       background: rgba(21, 26, 33, .7);
       color: var(--text);
       pointer-events: auto;
+      text-align: center;
     }
 
     .team-btn[data-active="true"][data-team="red"] {
@@ -105,15 +107,8 @@
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      gap: 4px;
-    }
-
-    .timer-text {
-      font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--text);
-      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+      gap: 8px;
+      pointer-events: auto;
     }
 
     .hit-counter {
@@ -123,7 +118,7 @@
       color: var(--neutral);
       background: rgba(21, 26, 33, .7);
       border: 1px solid rgba(255, 255, 255, .14);
-      padding: 6px 10px;
+      padding: 8px 12px;
       border-radius: 8px;
     }
 
@@ -132,9 +127,24 @@
       font-size: 15px;
     }
 
+    .stop-btn {
+      font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace;
+      font-size: 12px;
+      letter-spacing: .06em;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1.5px solid rgba(255, 255, 255, .18);
+      background: rgba(255, 255, 255, .1);
+      color: var(--text);
+    }
+
+    .stop-btn:active {
+      background: rgba(255, 255, 255, .3);
+    }
+
     .legend {
       position: absolute;
-      top: 75px;
+      top: 100px;
       left: 0;
       right: 0;
       z-index: 5;
@@ -323,8 +333,8 @@
         <button class="team-btn" data-team="blue" data-active="false">我方:藍隊</button>
       </div>
       <div class="stats-board">
-        <div class="timer-text" id="timerText">01:00</div>
         <div class="hit-counter">命中 <b id="hitCount">0</b></div>
+        <button class="stop-btn" id="stopBtn">結束/休息</button>
       </div>
     </div>
 
@@ -348,18 +358,10 @@
     <!-- 開始畫面 -->
     <div class="overlay-screen" id="startOverlay">
       <h1>相機對戰 · 射擊測試</h1>
-      <p>改為「手動開火」機制。當準星對準配戴敵隊顏色標記的臉部時，按下下方快門按鈕進行射擊！<br>每局限時 60 秒，時間到會關閉相機以免過熱。</p>
-      <button class="action-btn" id="startBtn">允許相機並開始</button>
+      <p>手動開火機制：準星對準配戴敵隊顏色標記的臉部時，按下下方快門按鈕進行射擊！</p>
+      <p style="font-size: 13px; color: var(--hit);">※ 為了省電與防止手機發熱，切換分頁或縮小網頁時，相機會自動關閉。</p>
+      <button class="action-btn" id="startBtn">啟動相機</button>
       <div class="error-text hidden" id="errorText"></div>
-    </div>
-
-    <!-- 結算畫面 -->
-    <div class="overlay-screen hidden" id="endOverlay">
-      <h1>時間到！</h1>
-      <p style="font-size: 18px; color: var(--text);">本次總命中次數</p>
-      <h2 style="font-size: 48px; color: var(--hit); margin: 0 0 16px 0;" id="finalScore">0</h2>
-      <p>相機已關閉。休息一下，讓手機降溫吧！</p>
-      <button class="action-btn" id="restartBtn">再玩一局</button>
     </div>
   </div>
 
@@ -370,21 +372,18 @@
 
     // UI 元素
     const startOverlay = document.getElementById('startOverlay');
-    const endOverlay = document.getElementById('endOverlay');
     const hud = document.getElementById('hud');
     const legend = document.getElementById('legend');
     const reticleUI = document.getElementById('reticle');
     const bottomControls = document.getElementById('bottomControls');
 
     const startBtn = document.getElementById('startBtn');
-    const restartBtn = document.getElementById('restartBtn');
+    const stopBtn = document.getElementById('stopBtn');
     const shootBtn = document.getElementById('shootBtn');
     const flashEl = document.getElementById('flash');
     const errorText = document.getElementById('errorText');
     const statusText = document.getElementById('statusText');
     const hitCountEl = document.getElementById('hitCount');
-    const timerText = document.getElementById('timerText');
-    const finalScoreEl = document.getElementById('finalScore');
     const legendText = document.getElementById('legendText');
     const reticleSvg = document.getElementById('reticleSvg');
     const teamBtns = document.querySelectorAll('.team-btn');
@@ -394,8 +393,6 @@
     let enemyTeam = 'blue';
     let hitCount = 0;
     let isPlaying = false;
-    let gameTimer = 60;
-    let timerInterval = null;
     let animationFrameId = null;
 
     // 偵測變數
@@ -405,7 +402,6 @@
     let lastEnemySeen = false;
     let lastSampleRect = null;
 
-    // 兩隊顏色定義 (放寬了飽和度 sat 與亮度 val 的限制，讓對著電腦螢幕測試時更容易成功)
     const TEAM_COLORS = {
       red: { label: '紅隊', hueRanges: [[0, 25], [335, 360]], sat: 0.20, val: 0.20 },
       blue: { label: '藍隊', hueRanges: [[190, 260]], sat: 0.20, val: 0.20 }
@@ -444,7 +440,6 @@
     }
 
     function sampleColorNearForehead(box) {
-      // 稍微加大了取樣範圍的比例，避免距離遠、人臉小的時候取樣不到
       const sx = Math.max(0, Math.round(box.originX));
       const sy = Math.max(0, Math.round(box.originY - box.height * 0.4));
       const sw = Math.min(canvas.width - sx, Math.round(box.width));
@@ -464,7 +459,6 @@
       return { r: r / n, g: g / n, b: b / n, rect: { sx, sy, sw, sh } };
     }
 
-    // 初始化相機
     async function initCamera() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -477,7 +471,7 @@
       canvas.height = video.videoHeight;
     }
 
-    // 停止相機 (防發燙核心)
+    // 徹底關閉相機 (防發熱核心)
     function stopCamera() {
       if (video.srcObject) {
         video.srcObject.getTracks().forEach(track => track.stop());
@@ -485,21 +479,19 @@
       }
     }
 
-    // 初始化 AI 臉部偵測
     async function initFaceDetector() {
-      if (faceDetector) return; // 已初始化過就不再載入
+      if (faceDetector) return;
       const { FaceDetector, FilesetResolver } = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0");
       const vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
       );
-      // 改用 full_range 模型，支援更遠的偵測距離 (最高約5公尺)
       faceDetector = await FaceDetector.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite",
           delegate: "GPU"
         },
         runningMode: "VIDEO",
-        minDetectionConfidence: 0.4 // 稍微降低門檻以應付翻拍照片
+        minDetectionConfidence: 0.4
       });
     }
 
@@ -541,13 +533,11 @@
       }
     }
 
-    // 主渲染與偵測迴圈
     function renderLoop() {
       if (!isPlaying) return;
       animationFrameId = requestAnimationFrame(renderLoop);
       if (video.readyState < 2) return;
 
-      // 降低 FPS 運算頻率以減少發熱 (每 3 幀才跑一次模型，約 10~20 fps，對射擊判定已足夠)
       frameCounter++;
       if (faceDetector && frameCounter % 3 === 0) {
         const result = faceDetector.detectForVideo(video, performance.now());
@@ -570,25 +560,6 @@
       drawOverlay();
     }
 
-    // --- 遊戲邏輯控制 ---
-
-    function formatTime(sec) {
-      const m = Math.floor(sec / 60).toString().padStart(2, '0');
-      const s = (sec % 60).toString().padStart(2, '0');
-      return `${m}:${s}`;
-    }
-
-    function startTimer() {
-      timerText.textContent = formatTime(gameTimer);
-      timerInterval = setInterval(() => {
-        gameTimer--;
-        timerText.textContent = formatTime(gameTimer);
-        if (gameTimer <= 0) {
-          endGame();
-        }
-      }, 1000);
-    }
-
     async function startGame() {
       startBtn.disabled = true;
       startBtn.textContent = '啟動相機中…';
@@ -602,21 +573,18 @@
         statusText.textContent = '載入模型中…';
         await initFaceDetector();
 
-        // 初始化遊戲數值
-        hitCount = 0;
-        gameTimer = 60; // 一局 60 秒
-        hitCountEl.textContent = hitCount;
+        // (可選) 在這裡把 hitCount = 0 若你想每次啟動都歸零
+        // hitCount = 0; hitCountEl.textContent = hitCount;
+
         isPlaying = true;
 
         // 切換介面
         startOverlay.classList.add('hidden');
-        endOverlay.classList.add('hidden');
         hud.classList.remove('hidden');
         legend.classList.remove('hidden');
         reticleUI.classList.remove('hidden');
         bottomControls.classList.remove('hidden');
 
-        startTimer();
         renderLoop();
       } catch (err) {
         console.error(err);
@@ -627,53 +595,62 @@
       }
     }
 
-    function endGame() {
+    // 結束/暫停遊戲
+    function stopGame(isAuto = false) {
+      if (!isPlaying) return;
       isPlaying = false;
-      clearInterval(timerInterval);
       cancelAnimationFrame(animationFrameId);
 
-      // 關閉相機 (降溫)
+      // 切斷相機電源，徹底防發熱
       stopCamera();
-      ctx.clearRect(0, 0, canvas.width, canvas.height); // 清空畫布
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // 切換至結算介面
+      // 藏起遊戲介面，顯示開始畫面
       hud.classList.add('hidden');
       legend.classList.add('hidden');
       reticleUI.classList.add('hidden');
       bottomControls.classList.add('hidden');
+      startOverlay.classList.remove('hidden');
 
-      finalScoreEl.textContent = hitCount;
-      endOverlay.classList.remove('hidden');
-
-      // 重置開始按鈕狀態以備後用
       startBtn.disabled = false;
-      startBtn.textContent = '允許相機並開始';
+      if (isAuto) {
+        startBtn.textContent = '繼續 (之前已自動暫停)';
+        errorText.textContent = '偵測到離開畫面，相機已自動關閉以節省電量。';
+        errorText.style.color = 'var(--hit)'; // 綠/黃色提示
+        errorText.classList.remove('hidden');
+      } else {
+        startBtn.textContent = '重新啟動相機';
+        errorText.classList.add('hidden');
+      }
     }
 
     // --- 事件綁定 ---
 
     startBtn.addEventListener('click', startGame);
-    restartBtn.addEventListener('click', () => {
-      endOverlay.classList.add('hidden');
-      startGame();
+
+    // 手動結束按鈕
+    stopBtn.addEventListener('click', () => stopGame(false));
+
+    // 【重點】Page Visibility API - 當網頁縮小、切換分頁或關閉螢幕時，立刻斷開相機！
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && isPlaying) {
+        stopGame(true);
+      }
     });
 
     // 射擊 (板機) 處理
     shootBtn.addEventListener('click', () => {
       if (!isPlaying) return;
 
-      // 1. 視覺閃爍特效
       flashEl.classList.add('active');
-      setTimeout(() => flashEl.classList.remove('active'), 50); // 瞬間消失
+      setTimeout(() => flashEl.classList.remove('active'), 50);
 
-      // 2. 判定是否擊中
       if (lastEnemySeen) {
         hitCount++;
         hitCountEl.textContent = hitCount;
         statusText.textContent = '💥 擊中！';
         statusText.style.color = 'var(--hit)';
 
-        // 給予按鈕打中時的視覺震動或顏色變化
         shootBtn.style.background = 'var(--hit)';
         setTimeout(() => shootBtn.style.background = '', 200);
       } else {

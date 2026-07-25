@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0B0E13">
+<title>相機對戰 · 偵測原型</title>
+<style>
+  :root{
+    --void:#0B0E13;
+    --panel:#151A21;
+    --red:#FF4757;
+    --blue:#3D8BFF;
+    --neutral:#9CA8B4;
+    --hit:#FFD447;
+    --text:#E7ECF2;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--void); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+    overflow:hidden; overscroll-behavior:none;
+  }
+  #stage{position:fixed; inset:0;}
+  video{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; background:#000;
+  }
+  canvas#overlay{
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:cover; pointer-events:none;
+  }
+  .flash{ position:absolute; inset:0; z-index:15; pointer-events:none; background:#fff; opacity:0; }
+  .flash.flash-anim{ animation:flashPop .35s ease-out; }
+  @keyframes flashPop{ 0%{opacity:.85;} 100%{opacity:0;} }
+
+  #gameUI.hidden, .hidden{ display:none !important; }
+
+  .hud-top{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 14px;
+    background:linear-gradient(to bottom, rgba(11,14,19,.85), transparent);
+    z-index:5;
+  }
+  .team-toggle{display:flex; gap:8px;}
+  .team-btn{
+    font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+    font-size:12px; letter-spacing:.06em; padding:8px 12px; border-radius:8px;
+    border:1.5px solid rgba(255,255,255,.18); background:rgba(21,26,33,.7); color:var(--text);
+    pointer-events:auto;
+  }
+  .team-btn[data-active="true"][data-team="red"]{ background:var(--red); border-color:var(--red); color:#1a0507;}
+  .team-btn[data-active="true"][data-team="blue"]{ background:var(--blue); border-color:var(--blue); color:#04101f;}
+
+  .hud-right{ display:flex; align-items:center; gap:8px; }
+  .hit-counter{
+    font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+    font-size:13px; letter-spacing:.06em; color:var(--neutral);
+    background:rgba(21,26,33,.7); border:1px solid rgba(255,255,255,.14);
+    padding:8px 12px; border-radius:8px;
+  }
+  .hit-counter b{color:var(--hit); font-size:15px;}
+  .end-btn{
+    font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+    font-size:11px; letter-spacing:.05em; padding:8px 10px; border-radius:8px;
+    border:1.5px solid rgba(255,255,255,.18); background:rgba(21,26,33,.7); color:var(--neutral);
+    pointer-events:auto;
+  }
+
+  .legend{
+    position:absolute; top:64px; left:0; right:0; z-index:5;
+    display:flex; justify-content:center; pointer-events:none;
+  }
+  .legend span{
+    font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+    font-size:11px; color:var(--neutral); background:rgba(21,26,33,.7);
+    padding:5px 10px; border-radius:6px; border:1px solid rgba(255,255,255,.1);
+  }
+
+  .reticle-wrap{
+    position:absolute; top:44%; left:50%; transform:translate(-50%,-50%);
+    width:150px; height:150px; z-index:4; pointer-events:none;
+  }
+  .reticle{width:100%; height:100%;}
+
+  .result-banner{
+    position:absolute; left:50%; top:38%; transform:translate(-50%,-50%) scale(.92);
+    z-index:16; pointer-events:none; max-width:82vw; line-height:1.4;
+    font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+    font-size:17px; font-weight:700; letter-spacing:.02em; text-align:center;
+    padding:14px 20px; border-radius:12px;
+    background:rgba(21,26,33,.88); border:1.5px solid rgba(255,255,255,.15);
+    opacity:0; transition:opacity .18s ease, transform .18s ease;
+  }
+  .result-banner.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+  .result-banner.hit{ color:var(--hit); border-color:var(--hit); }
+  .result-banner.miss{ color:var(--neutral); }
+
+  .shutter-wrap{
+    position:absolute; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 28px);
+    transform:translateX(-50%); z-index:10;
+  }
+  .shutter-btn{
+    width:76px; height:76px; border-radius:50%;
+    border:4px solid var(--text); background:transparent;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:auto; padding:0;
+  }
+  .shutter-inner{
+    width:58px; height:58px; border-radius:50%; background:var(--text);
+    transition: transform .1s ease, background .15s ease;
+  }
+  .shutter-btn:active .shutter-inner{ transform:scale(.8); }
+  .shutter-btn:disabled .shutter-inner{ background:var(--neutral); }
+
+  .status-bar{
+    position:absolute; left:0; right:0; bottom:120px;
+    padding:0 16px; z-index:5; text-align:center; pointer-events:none;
+  }
+  .status-text{
+    font-family:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+    font-size:13px; letter-spacing:.03em; color:var(--neutral);
+  }
+
+  .start-overlay{
+    position:absolute; inset:0; z-index:20; background:var(--void);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:32px; text-align:center; gap:16px;
+  }
+  .start-overlay h1{ font-size:21px; margin:0; letter-spacing:.02em; font-weight:700; }
+  .start-overlay p{ font-size:14px; line-height:1.7; color:var(--neutral); margin:0; max-width:340px; }
+  .start-btn{
+    margin-top:8px; font-size:16px; font-weight:700; letter-spacing:.03em;
+    padding:14px 34px; border-radius:999px; border:none;
+    background:var(--text); color:var(--void); pointer-events:auto;
+  }
+  .start-btn:active{ transform:scale(.97); }
+  .start-btn:disabled{ opacity:.6; }
+  .error-text{ color:var(--red); font-size:13px; margin-top:4px; max-width:320px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="overlay"></canvas>
+  <div class="flash" id="flash"></div>
+
+  <div id="gameUI" class="hidden">
+    <div class="hud-top">
+      <div class="team-toggle">
+        <button class="team-btn" data-team="red" data-active="true">我方:紅隊</button>
+        <button class="team-btn" data-team="blue" data-active="false">我方:藍隊</button>
+      </div>
+      <div class="hud-right">
+        <div class="hit-counter">擊中 <b id="hitCount">0</b></div>
+        <button class="end-btn" id="endBtn">結束</button>
+      </div>
+    </div>
+
+    <div class="legend"><span id="legendText">尋找配戴「藍隊」頭巾的敵方臉孔</span></div>
+
+    <div class="reticle-wrap">
+      <svg class="reticle" viewBox="0 0 150 150" id="reticleSvg">
+        <circle cx="75" cy="75" r="46" fill="none" stroke="#9CA8B4" stroke-width="2"/>
+        <path d="M75 8 L75 28 M75 122 L75 142 M8 75 L28 75 M122 75 L142 75" stroke="#9CA8B4" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+
+    <div class="status-bar"><div class="status-text">瞄準對方額頭,按下方快門鍵拍一張判定</div></div>
+    <div class="result-banner" id="resultBanner"></div>
+
+    <div class="shutter-wrap">
+      <button class="shutter-btn" id="shutterBtn" aria-label="拍照判定"><span class="shutter-inner"></span></button>
+    </div>
+  </div>
+
+  <div class="start-overlay" id="startOverlay">
+    <h1>相機對戰 · 偵測原型</h1>
+    <p>瞄準對方額頭、按下快門鍵拍一張——同時是人臉、又是敵隊頭巾顏色,才算一次有效擊中。這裡先驗證鏡頭端的判斷邏輯,正式版還需要接後端才能真的同步兩隊血量。</p>
+    <p>請把裝置直向拿好,並允許相機權限。</p>
+    <button class="start-btn" id="startBtn">開始遊戲</button>
+    <div class="error-text hidden" id="errorText"></div>
+  </div>
+
+  <div class="start-overlay hidden" id="endOverlay">
+    <h1>本回合結束</h1>
+    <p id="endSummaryText">這次共擊中 0 次,相機已經關閉。</p>
+    <button class="start-btn" id="restartBtn">重新開始</button>
+  </div>
+</div>
+
+<script type="module">
+const video = document.getElementById('video');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const flash = document.getElementById('flash');
+const gameUI = document.getElementById('gameUI');
+const startOverlay = document.getElementById('startOverlay');
+const startBtn = document.getElementById('startBtn');
+const errorText = document.getElementById('errorText');
+const endOverlay = document.getElementById('endOverlay');
+const endSummaryText = document.getElementById('endSummaryText');
+const restartBtn = document.getElementById('restartBtn');
+const endBtn = document.getElementById('endBtn');
+const shutterBtn = document.getElementById('shutterBtn');
+const hitCountEl = document.getElementById('hitCount');
+const legendText = document.getElementById('legendText');
+const resultBanner = document.getElementById('resultBanner');
+const teamBtns = document.querySelectorAll('.team-btn');
+
+let myTeam = 'red';
+let enemyTeam = 'blue';
+let hitCount = 0;
+let faceDetector = null;
+let mediaStream = null;
+let animId = null;
+let previewPaused = false;
+let shotBusy = false;
+const SHOT_RESULT_MS = 1400;
+
+// 兩隊的顏色定義:色相(Hue)範圍 + 最低飽和度/亮度門檻。
+// 色相判斷比亮度判斷更耐燈光變化,陰影下通常還是分得出紅/藍。
+// 正式使用前務必用實際頭巾材質、在活動當天的燈光下重新測試這幾個數字。
+const TEAM_COLORS = {
+  red:  { label: '紅隊', hueRanges: [[0,18], [342,360]], sat: 0.35, val: 0.28 },
+  blue: { label: '藍隊', hueRanges: [[195,255]],          sat: 0.30, val: 0.28 }
+};
+
+teamBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    myTeam = btn.dataset.team;
+    enemyTeam = myTeam === 'red' ? 'blue' : 'red';
+    teamBtns.forEach(b => b.dataset.active = (b.dataset.team === myTeam) ? 'true' : 'false');
+    legendText.textContent = `尋找配戴「${TEAM_COLORS[enemyTeam].label}」頭巾的敵方臉孔`;
+  });
+});
+
+function rgbToHsv(r, g, b){
+  r/=255; g/=255; b/=255;
+  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
+  let h=0;
+  if (d !== 0){
+    if (max===r) h=((g-b)/d)%6;
+    else if (max===g) h=(b-r)/d+2;
+    else h=(r-g)/d+4;
+    h*=60; if (h<0) h+=360;
+  }
+  const s = max===0 ? 0 : d/max;
+  const v = max;
+  return [h,s,v];
+}
+
+function matchesTeamColor(h,s,v,teamKey){
+  const def = TEAM_COLORS[teamKey];
+  if (s < def.sat || v < def.val) return false;
+  return def.hueRanges.some(([lo,hi]) => h>=lo && h<=hi);
+}
+
+function sampleColorNearForehead(box){
+  // 取樣區塊在偵測框「上方」,對應額頭/頭巾的位置,而不是胸口。
+  const sx = Math.max(0, Math.round(box.originX + box.width*0.15));
+  const sy = Math.max(0, Math.round(box.originY - box.height*0.35));
+  const sw = Math.min(canvas.width - sx, Math.round(box.width*0.7));
+  const sh = Math.min(canvas.height - sy, Math.round(box.height*0.35));
+  if (sw <= 4 || sh <= 4) return null;
+  let data;
+  try { data = ctx.getImageData(sx, sy, sw, sh).data; }
+  catch(e){ return null; }
+  let r=0,g=0,b=0,n=0;
+  for (let i=0; i<data.length; i+=16){
+    r+=data[i]; g+=data[i+1]; b+=data[i+2]; n++;
+  }
+  if (!n) return null;
+  return { r:r/n, g:g/n, b:b/n, rect:{sx,sy,sw,sh} };
+}
+
+async function initCamera(){
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: 'environment' }, width:{ideal:1280}, height:{ideal:720} },
+    audio: false
+  });
+  video.srcObject = mediaStream;
+  await new Promise(resolve => { video.onloadedmetadata = () => resolve(); });
+  await video.play();
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+}
+
+async function initFaceDetector(){
+  const { FaceDetector, FilesetResolver } = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0");
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm"
+  );
+  faceDetector = await FaceDetector.createFromOptions(vision, {
+    baseOptions: {
+      // full_range 模型,比原本的 short_range 更適合抓中遠距離的臉,不是只有近距離自拍才抓得到。
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite",
+      delegate: "GPU"
+    },
+    runningMode: "VIDEO"
+  });
+}
+
+function previewLoop(){
+  animId = requestAnimationFrame(previewLoop);
+  if (previewPaused || video.readyState < 2) return;
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+}
+
+function flashScreen(){
+  flash.classList.remove('flash-anim');
+  void flash.offsetWidth;
+  flash.classList.add('flash-anim');
+}
+
+function evaluateShot(){
+  const result = faceDetector.detectForVideo(video, performance.now());
+  const detections = result.detections || [];
+  if (!detections.length) return { hit:false, reason:'沒偵測到人臉' };
+
+  const box = detections[0].boundingBox;
+  ctx.strokeStyle = 'rgba(231,236,242,.75)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(box.originX, box.originY, box.width, box.height);
+
+  const sample = sampleColorNearForehead(box);
+  if (!sample) return { hit:false, reason:'沒偵測到人臉' };
+
+  const [h,s,v] = rgbToHsv(sample.r, sample.g, sample.b);
+  const hit = matchesTeamColor(h,s,v,enemyTeam);
+  ctx.strokeStyle = hit ? (enemyTeam==='red' ? '#FF4757' : '#3D8BFF') : 'rgba(255,255,255,.6)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(sample.rect.sx, sample.rect.sy, sample.rect.sw, sample.rect.sh);
+
+  return hit ? { hit:true, reason:'' } : { hit:false, reason:'偵測到人臉,但沒看到敵隊頭巾' };
+}
+
+async function takeShot(){
+  if (shotBusy || !faceDetector) return;
+  shotBusy = true;
+  shutterBtn.disabled = true;
+  previewPaused = true; // 定格當下畫面,像真的拍了一張照片
+  flashScreen();
+
+  const { hit, reason } = evaluateShot();
+
+  if (hit){
+    hitCount++;
+    hitCountEl.textContent = hitCount;
+    resultBanner.textContent = '🎯 擊中!';
+    resultBanner.className = 'result-banner show hit';
+  } else {
+    resultBanner.textContent = `❌ 沒有擊中(${reason})`;
+    resultBanner.className = 'result-banner show miss';
+  }
+
+  await new Promise(r => setTimeout(r, SHOT_RESULT_MS));
+
+  resultBanner.classList.remove('show');
+  previewPaused = false;
+  shotBusy = false;
+  shutterBtn.disabled = false;
+}
+
+function stopCamera(){
+  if (animId) cancelAnimationFrame(animId);
+  animId = null;
+  if (mediaStream){
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
+}
+
+shutterBtn.addEventListener('click', takeShot);
+
+endBtn.addEventListener('click', () => {
+  stopCamera();
+  gameUI.classList.add('hidden');
+  endSummaryText.textContent = `這次共擊中 ${hitCount} 次,相機已經關閉。`;
+  endOverlay.classList.remove('hidden');
+});
+
+restartBtn.addEventListener('click', () => {
+  hitCount = 0;
+  hitCountEl.textContent = 0;
+  endOverlay.classList.add('hidden');
+  startOverlay.classList.remove('hidden');
+});
+
+startBtn.addEventListener('click', async () => {
+  startBtn.disabled = true;
+  startBtn.textContent = '啟動中…';
+  errorText.classList.add('hidden');
+  try {
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost'){
+      throw new Error('相機權限需要在 https 網址下才能使用,請確認部署後的網址是 https 開頭。');
+    }
+    await initCamera();
+    startBtn.textContent = '載入偵測模型中…';
+    await initFaceDetector();
+    startOverlay.classList.add('hidden');
+    gameUI.classList.remove('hidden');
+    previewPaused = false;
+    previewLoop();
+  } catch (err){
+    console.error(err);
+    stopCamera();
+    errorText.textContent = '啟動失敗:' + (err && err.message ? err.message : '無法取得相機權限,請確認已允許相機存取。');
+    errorText.classList.remove('hidden');
+    startBtn.disabled = false;
+    startBtn.textContent = '重試';
+  }
+});
+</script>
+</body>
+</html>

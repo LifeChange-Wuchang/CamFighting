@@ -79,6 +79,20 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ---------------- 首頁 ----------------
+function explainError(e) {
+  const msg = String(e?.message || e);
+  if (/permission[_ ]denied/i.test(msg)) {
+    return `${msg}<br><br><b>常見原因:</b><br>
+      1. Firebase 的「規則」分頁還沒貼上 database.rules.json 的內容(或貼了沒按發布)<br>
+      2. 資料庫還停在測試模式,而測試模式已經過期<br>
+      3. Authentication 沒有啟用「匿名」登入方式`;
+  }
+  if (/network|offline|unavailable/i.test(msg)) {
+    return `${msg}<br><br>看起來是網路問題,請確認手機有連上網路。`;
+  }
+  return msg;
+}
+
 $('btnCreate').onclick = async () => {
   const name = $('homeName').value.trim();
   if (!name) return toast('請先輸入你的名字');
@@ -86,7 +100,7 @@ $('btnCreate').onclick = async () => {
     loading(true, '建立房間中…');
     const code = await game.createRoom({}, name);
     afterJoin(code);
-  } catch (e) { modal('建立失敗', String(e.message || e)); }
+  } catch (e) { console.error(e); modal('建立失敗', explainError(e)); }
   finally { loading(false); }
 };
 
@@ -99,7 +113,7 @@ $('btnJoin').onclick = async () => {
     loading(true, '加入房間中…');
     await game.joinRoom(code, name, null);
     afterJoin(code);
-  } catch (e) { modal('加入失敗', String(e.message || e)); }
+  } catch (e) { console.error(e); modal('加入失敗', explainError(e)); }
   finally { loading(false); }
 };
 

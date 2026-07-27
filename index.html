@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0B0E13">
+<title>相機對戰</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- 相機畫面(遊戲/掃描時共用) -->
+<video id="video" playsinline muted></video>
+<canvas id="overlay"></canvas>
+<canvas id="scanwork" class="offscreen"></canvas>
+<div class="flash" id="flash"></div>
+
+<!-- 連線狀態 -->
+<div id="netBadge" class="net-badge hidden">離線 · 重新連線中…</div>
+
+<!-- ========== 首頁 ========== -->
+<section class="screen" id="screen-home">
+  <div class="sheet">
+    <h1 class="logo">相機對戰</h1>
+    <p class="sub">用手機鏡頭拍下敵隊頭巾,扣光對方血量</p>
+    <input id="homeName" class="field" maxlength="12" placeholder="你的名字" autocomplete="off">
+    <div class="row">
+      <input id="homeCode" class="field code" maxlength="4" placeholder="房號" autocomplete="off" inputmode="text">
+      <button id="btnJoin" class="btn primary">加入</button>
+    </div>
+    <div class="divider"><span>或</span></div>
+    <button id="btnCreate" class="btn ghost">建立新房間(主持人)</button>
+    <p class="hint" id="homeHint"></p>
+  </div>
+</section>
+
+<!-- ========== 大廳 ========== -->
+<section class="screen hidden" id="screen-lobby">
+  <div class="sheet wide">
+    <div class="lobby-head">
+      <div>
+        <div class="label">房號</div>
+        <div class="roomcode" id="lobbyCode">----</div>
+      </div>
+      <button id="btnShowJoinQR" class="btn tiny ghost">加入QR</button>
+    </div>
+
+    <div class="teams-split">
+      <div class="team-col red">
+        <div class="team-title">紅隊 <span id="redCount">0</span></div>
+        <ul class="plist" id="redList"></ul>
+        <button class="btn tiny" data-join-team="red">加入紅隊</button>
+      </div>
+      <div class="team-col blue">
+        <div class="team-title">藍隊 <span id="blueCount">0</span></div>
+        <ul class="plist" id="blueList"></ul>
+        <button class="btn tiny" data-join-team="blue">加入藍隊</button>
+      </div>
+    </div>
+
+    <!-- 主持人專屬 -->
+    <div id="hostPanel" class="host-panel hidden">
+      <h3>主持人設定</h3>
+      <div class="cfg-grid">
+        <label>起始血量<input type="number" id="cfgHp" min="10" max="9999"></label>
+        <label>每次擊中扣<input type="number" id="cfgDmg" min="1" max="99"></label>
+        <label>佔領回血<input type="number" id="cfgHeal" min="0" max="99"></label>
+        <label>佔領秒數<input type="number" id="cfgHold" min="1" max="30"></label>
+        <label>開火冷卻(秒)<input type="number" id="cfgCd" min="0" max="60"></label>
+        <label>時間(分)<input type="number" id="cfgDur" min="1" max="180"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="cfgChest"> 啟用寶箱道具</label>
+
+      <h3>據點管理</h3>
+      <div class="row">
+        <input id="ptLabel" class="field" maxlength="16" placeholder="據點名稱,例如:司令台">
+        <select id="ptType" class="field short">
+          <option value="capture">搶佔點</option>
+          <option value="chest">寶箱</option>
+        </select>
+        <button id="btnAddPoint" class="btn tiny">新增</button>
+      </div>
+      <ul class="ptlist" id="pointList"></ul>
+      <button id="btnPrintPoints" class="btn ghost small">列印所有據點QR碼</button>
+
+      <button id="btnStart" class="btn primary big">開始遊戲</button>
+    </div>
+
+    <p class="hint" id="lobbyHint">等待主持人開始…</p>
+    <button id="btnLeave" class="btn ghost small">離開房間</button>
+  </div>
+</section>
+
+<!-- ========== 遊戲中 HUD ========== -->
+<section class="screen overlay-screen hidden" id="screen-game">
+  <div class="hud-top">
+    <div class="hpbars">
+      <div class="hpbar red"><i id="hpRedFill"></i><span id="hpRedText">0</span></div>
+      <div class="hpbar blue"><i id="hpBlueFill"></i><span id="hpBlueText">0</span></div>
+    </div>
+    <div class="timer" id="timer">--:--</div>
+  </div>
+
+  <div class="tagline"><span id="tagTeam">你是紅隊</span><span id="tagModel"></span></div>
+
+  <ul class="feed" id="feed"></ul>
+
+  <div class="buffs" id="buffs"></div>
+
+  <div class="hud-bottom">
+    <button id="btnScan" class="btn round ghost" title="掃描據點">掃描</button>
+    <button id="btnFire" class="shutter" aria-label="開火"><span></span></button>
+    <button id="btnMenu" class="btn round ghost" title="選單">選單</button>
+  </div>
+  <div class="cooldown" id="cooldownText"></div>
+
+  <div class="shot-result" id="shotResult">
+    <div class="sr-title" id="srTitle"></div>
+    <div class="sr-detail" id="srDetail"></div>
+    <div class="sr-hint">點畫面繼續</div>
+  </div>
+  <div class="dismiss-layer hidden" id="dismissLayer"></div>
+</section>
+
+<!-- ========== 掃描模式 ========== -->
+<section class="screen overlay-screen hidden" id="screen-scan">
+  <div class="scan-frame">
+    <div class="scan-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="54" class="ring-bg"/><circle cx="60" cy="60" r="54" class="ring-fg" id="scanRing"/></svg></div>
+  </div>
+  <div class="scan-info" id="scanInfo">把據點的 QR 碼對準框內</div>
+  <button id="btnScanClose" class="btn ghost small floating">取消</button>
+</section>
+
+<!-- ========== 結算 ========== -->
+<section class="screen hidden" id="screen-result">
+  <div class="sheet wide">
+    <h1 class="winner" id="winnerText">結果</h1>
+    <p class="sub" id="endReason"></p>
+    <div class="score-row">
+      <div class="score red"><b id="resRedHp">0</b><span>紅隊剩餘</span></div>
+      <div class="score blue"><b id="resBlueHp">0</b><span>藍隊剩餘</span></div>
+    </div>
+    <h3>個人榜</h3>
+    <ol class="leaderboard" id="leaderboard"></ol>
+    <div id="hostResultBtns" class="hidden">
+      <button id="btnAgain" class="btn primary">回到大廳,再玩一場</button>
+    </div>
+    <button id="btnResultLeave" class="btn ghost small">離開房間</button>
+  </div>
+</section>
+
+<!-- ========== 通用彈窗 ========== -->
+<div class="modal hidden" id="modal">
+  <div class="modal-box">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+    <div class="modal-btns" id="modalBtns"></div>
+  </div>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+<div class="loading hidden" id="loading"><div class="spinner"></div><p id="loadingText">載入中…</p></div>
+
+<script type="module" src="js/ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "rules": {
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('meta/hostUid').val() === auth.uid)",
+
+        "meta": {
+          "status":  { ".validate": "newData.val() === 'lobby' || newData.val() === 'running' || newData.val() === 'ended'" },
+          "hostUid": { ".validate": "newData.isString()" }
+        },
+
+        "config": {
+          "startHp":         { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 100000" },
+          "hitDamage":       { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 1000" },
+          "captureHeal":     { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1000" },
+          "captureHoldSec":  { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 120" },
+          "fireCooldownSec": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 600" },
+          "durationMin":     { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 600" }
+        },
+
+        "teams": {
+          ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
+          "$team": {
+            ".validate": "$team === 'red' || $team === 'blue'",
+            "hp": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= root.child('rooms').child($code).child('teams').child($team).child('maxHp').val()"
+            },
+            "hits":     { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "captures": { ".validate": "newData.isNumber() && newData.val() >= 0" }
+          }
+        },
+
+        "players": {
+          "$uid": {
+            ".write": "auth != null && ($uid === auth.uid || root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid)",
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12" },
+            "team": { ".validate": "newData.val() === 'red' || newData.val() === 'blue'" }
+          }
+        },
+
+        "points": {
+          ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
+          "$pid": {
+            "type":  { ".validate": "newData.val() === 'capture' || newData.val() === 'chest'" },
+            "label": { ".validate": "newData.isString() && newData.val().length <= 16" },
+            "owner": { ".validate": "newData.val() === null || newData.val() === 'red' || newData.val() === 'blue'" }
+          }
+        },
+
+        "feed": {
+          ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
+          "$fid": {
+            "msg": { ".validate": "newData.isString() && newData.val().length <= 120" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0B0E13">
+<title>頭巾校色工具</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<canvas id="overlay" class="offscreen"></canvas>
+
+<div class="cal-box" id="calBox"></div>
+
+<div class="cal-top">
+  <button id="btnFlip" class="btn ghost">切換鏡頭</button>
+  <div class="spacer"></div>
+  <button id="btnFinish" class="btn primary">產生設定</button>
+</div>
+
+<div class="cal-readout">
+  <div class="cal-card" id="readout">啟動相機中…</div>
+</div>
+
+<div class="cal-bar">
+  <button id="btnGood" class="btn primary">記錄頭巾(<span id="nGood">0</span>)</button>
+  <button id="btnBad" class="btn ghost">記錄皮膚/背景(<span id="nBad">0</span>)</button>
+  <button id="btnClear" class="btn ghost">清除</button>
+</div>
+
+<div class="cal-result hidden" id="result"></div>
+
+<div class="start-overlay" id="intro">
+  <h1 class="logo">頭巾校色工具</h1>
+  <p class="sub">把黃色方框對準頭巾布料,按「記錄頭巾」收集幾筆。<br>
+     再把方框對準<b>額頭皮膚、頭髮、牆壁</b>等不該被判定的東西,按「記錄皮膚/背景」。<br>
+     兩種都收集完再按「產生設定」,工具會算出既涵蓋頭巾、又能排除皮膚的門檻值。</p>
+  <p class="sub"><b>重要:</b>請在活動當天的實際場地與燈光下校色,並用背面鏡頭(遊戲用的是背面鏡頭)。</p>
+  <button id="btnStart" class="btn primary">開始</button>
+  <p class="hint" id="introErr"></p>
+</div>
+
+<script type="module" src="js/calibrate.js"></script>
+</body>
+</html>

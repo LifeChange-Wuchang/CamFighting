@@ -45,6 +45,7 @@
       <button id="btnShowJoinQR" class="btn tiny ghost">加入QR</button>
     </div>
 
+    <div class="host-row" id="hostRow"></div>
     <div class="teams-split">
       <div class="team-col red">
         <div class="team-title">紅隊 <span id="redCount">0</span></div>
@@ -62,14 +63,19 @@
     <div id="hostPanel" class="host-panel hidden">
       <h3>主持人設定</h3>
       <div class="cfg-grid">
-        <label>起始血量<input type="number" id="cfgHp" min="10" max="9999"></label>
-        <label>每次擊中扣<input type="number" id="cfgDmg" min="1" max="99"></label>
-        <label>佔領回血<input type="number" id="cfgHeal" min="0" max="99"></label>
-        <label>佔領秒數<input type="number" id="cfgHold" min="1" max="30"></label>
-        <label>開火冷卻(秒)<input type="number" id="cfgCd" min="0" max="60"></label>
+        <label>起始血量<input type="number" id="cfgHp" min="10" max="999999"></label>
         <label>時間(分)<input type="number" id="cfgDur" min="1" max="180"></label>
+        <label>每次擊中扣<input type="number" id="cfgDmg" min="1" max="99"></label>
+        <label>開火冷卻(秒)<input type="number" id="cfgCd" min="0" max="60"></label>
+        <label>佔領回血(%)<input type="number" id="cfgHealPct" min="0" max="100" step="0.5"></label>
+        <label>佔領秒數<input type="number" id="cfgHold" min="1" max="30"></label>
+        <label>據點冷卻(秒)<input type="number" id="cfgCapCd" min="0" max="3600"></label>
+        <label>寶箱冷卻(秒)<input type="number" id="cfgChestCd" min="0" max="3600"></label>
       </div>
+      <button id="btnSuggestHp" class="btn tiny ghost">依目前人數建議血量</button>
+      <p class="hint left" id="hpAdvice"></p>
       <label class="check"><input type="checkbox" id="cfgChest"> 啟用寶箱道具</label>
+      <label class="check"><input type="checkbox" id="cfgHostPlays"> 我也要下場玩(取消勾選則只控場)</label>
 
       <h3>據點管理</h3>
       <div class="row">
@@ -82,6 +88,7 @@
       </div>
       <ul class="ptlist" id="pointList"></ul>
       <button id="btnPrintPoints" class="btn ghost small">列印所有據點QR碼</button>
+      <a href="calibrate.html" target="_blank" class="btn ghost small link">開啟頭巾校色工具</a>
 
       <button id="btnStart" class="btn primary big">開始遊戲</button>
     </div>
@@ -129,6 +136,33 @@
   </div>
   <div class="scan-info" id="scanInfo">把據點的 QR 碼對準框內</div>
   <button id="btnScanClose" class="btn ghost small floating">取消</button>
+</section>
+
+<!-- ========== 主持人儀表板 ========== -->
+<section class="screen hidden" id="screen-dash">
+  <div class="sheet wide dash">
+    <div class="dash-head">
+      <div><div class="label">房號</div><div class="roomcode small" id="dashCode">----</div></div>
+      <div class="timer" id="dashTimer">--:--</div>
+    </div>
+
+    <div class="hpbars big">
+      <div class="hpbar red"><i id="dashRedFill"></i><span id="dashRedText">0</span></div>
+      <div class="hpbar blue"><i id="dashBlueFill"></i><span id="dashBlueText">0</span></div>
+    </div>
+    <div class="dash-stats" id="dashStats"></div>
+
+    <h3>據點狀況</h3>
+    <ul class="ptlist live" id="dashPoints"></ul>
+
+    <h3>即時戰報</h3>
+    <ul class="dash-feed" id="dashFeed"></ul>
+
+    <h3>玩家</h3>
+    <ul class="dash-players" id="dashPlayers"></ul>
+
+    <button id="btnDashEnd" class="btn primary big">結束本場</button>
+  </div>
 </section>
 
 <!-- ========== 結算 ========== -->

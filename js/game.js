@@ -112,12 +112,16 @@ export class GameClient {
     this.code = code;
     this.isHost = meta.hostUid === this.uid;
 
-    // 沒指定隊伍就自動分配到人少的一邊
+    // 主持人預設不下場,當控場者;其他人自動分配到人少的一邊
     if (!team) {
-      const ps = (await get(ref(this.db, `rooms/${code}/players`))).val() || {};
-      let r = 0, b = 0;
-      Object.values(ps).forEach(p => { if (p.team === 'red') r++; else if (p.team === 'blue') b++; });
-      team = r <= b ? 'red' : 'blue';
+      if (this.isHost) {
+        team = 'host';
+      } else {
+        const ps = (await get(ref(this.db, `rooms/${code}/players`))).val() || {};
+        let r = 0, b = 0;
+        Object.values(ps).forEach(p => { if (p.team === 'red') r++; else if (p.team === 'blue') b++; });
+        team = r <= b ? 'red' : 'blue';
+      }
     }
 
     const pRef = ref(this.db, `rooms/${code}/players/${this.uid}`);
@@ -166,7 +170,11 @@ export class GameClient {
   }
 
   myTeam() { return this.me?.team || this.room?.players?.[this.uid]?.team || null; }
-  enemyTeam() { return enemyOf(this.myTeam()); }
+  enemyTeam() {
+    const t = this.myTeam();
+    return (t === 'red' || t === 'blue') ? enemyOf(t) : null;
+  }
+  isSpectator() { return this.myTeam() === 'host'; }
   config() { return this.room?.config || DEFAULTS; }
 
   async setTeam(team, uid = this.uid) {
@@ -245,6 +253,7 @@ export class GameClient {
 
   async registerHit() {
     if (this.room?.meta?.status !== 'running') return { ok: false, reason: '遊戲尚未開始' };
+    if (this.isSpectator()) return { ok: false, reason: '你是控場者,不參與計分' };
     if (this.fireCooldownLeft() > 0) return { ok: false, reason: '冷卻中' };
 
     this.lastFireAt = this.now();
@@ -263,9 +272,10 @@ export class GameClient {
     return { ok: true, damage: dmg, enemyHp: res.snapshot.val() };
   }
 
-  // 搶佔點:同一隊已擁有就不重複計分
+  // 搶佔點:同一隊已擁有就不重複計分,並加上冷卻避免兩邊互搶刷血
   async capturePoint(pointId) {
     if (this.room?.meta?.status !== 'running') return { ok: false, reason: '遊戲尚未開始' };
+    if (this.isSpectator()) return { ok: false, reason: '控場者不參與搶佔' };
     const pRef = ref(this.db, `rooms/${this.code}/points/${pointId}`);
     const snap = await get(pRef);
     if (!snap.exists()) return { ok: false, reason: '這個據點不屬於本場遊戲' };
@@ -275,29 +285,36 @@ export class GameClient {
     const mine = this.myTeam();
     if (pt.owner === mine) return { ok: false, reason: '這個據點已經是你們的了' };
 
+    const cd = (this.config().captureCooldownSec || 0) * 1000;
+    if (pt.lastAt && Date.now() - pt.lastAt < cd) {
+      const left = Math.ceil((cd - (Date.now() - pt.lastAt)) / 1000);
+      return { ok: false, reason: `這個據點剛易主,還要 ${Math.max(0, left)} 秒才能再搶` };
+    }
+
     const tx = await runTransaction(pRef, cur => {
       if (!cur) return cur;
-      if (cur.owner === mine) return;           // 已被同隊搶下,放棄這次交易
+      if (cur.owner === mine) return;                                  // 已被同隊搶下
+      if (cur.lastAt && Date.now() - cur.lastAt < cd) return;          // 冷卻中
       cur.owner = mine;
       cur.lastAt = Date.now();
       return cur;
     });
     if (!tx.committed) return { ok: false, reason: '慢了一步,已被搶走' };
 
-    const heal = this.config().captureHeal || 0;
-    await runTransaction(ref(this.db, `rooms/${this.code}/teams/${mine}/hp`), cur => {
-      const max = this.room.teams[mine].maxHp || this.config().startHp;
-      return Math.min(max, (cur || 0) + heal);
-    });
+    const max = this.room.teams[mine].maxHp || this.config().startHp;
+    const heal = Math.max(1, Math.round(max * (this.config().captureHealPct || 0) / 100));
+    await runTransaction(ref(this.db, `rooms/${this.code}/teams/${mine}/hp`), cur =>
+      Math.min(max, (cur || 0) + heal));
     await runTransaction(ref(this.db, `rooms/${this.code}/teams/${mine}/captures`), c => (c || 0) + 1);
     await runTransaction(ref(this.db, `rooms/${this.code}/players/${this.uid}/captures`), c => (c || 0) + 1);
     await this.pushFeed('capture', `${this.me.name} 佔領了「${pt.label}」,${TEAM_LABEL[mine]} +${heal}`);
     return { ok: true, heal, label: pt.label };
   }
 
-  // 寶箱:每個箱子有冷卻,避免一直重複開
+  // 寶箱:每個箱子有冷卻,避免有人守在旁邊一直刷
   async openChest(pointId) {
     if (this.room?.meta?.status !== 'running') return { ok: false, reason: '遊戲尚未開始' };
+    if (this.isSpectator()) return { ok: false, reason: '控場者不能開寶箱' };
     if (!this.config().chestEnabled) return { ok: false, reason: '本場未啟用寶箱' };
     const pRef = ref(this.db, `rooms/${this.code}/points/${pointId}`);
     const snap = await get(pRef);
@@ -321,22 +338,25 @@ export class GameClient {
     const reward = pickReward();
     const mine = this.myTeam(), enemy = enemyOf(mine);
     const e = reward.effect;
+    const myMax = this.room.teams[mine].maxHp || this.config().startHp;
+    const enMax = this.room.teams[enemy].maxHp || this.config().startHp;
+    let amount = 0;
 
     if (e.type === 'heal') {
-      await runTransaction(ref(this.db, `rooms/${this.code}/teams/${mine}/hp`), cur => {
-        const max = this.room.teams[mine].maxHp || this.config().startHp;
-        return Math.min(max, (cur || 0) + e.amount);
-      });
+      amount = Math.max(1, Math.round(myMax * e.pct / 100));
+      await runTransaction(ref(this.db, `rooms/${this.code}/teams/${mine}/hp`), cur =>
+        Math.min(myMax, (cur || 0) + amount));
     } else if (e.type === 'strike') {
+      amount = Math.max(1, Math.round(enMax * e.pct / 100));
       await runTransaction(ref(this.db, `rooms/${this.code}/teams/${enemy}/hp`), cur =>
-        Math.max(0, (cur || 0) - e.amount));
+        Math.max(0, (cur || 0) - amount));
     } else if (e.type === 'double') {
       this.doubleUntil = this.now() + e.seconds * 1000;
     }
 
     await runTransaction(ref(this.db, `rooms/${this.code}/players/${this.uid}/chests`), c => (c || 0) + 1);
     await this.pushFeed('chest', `${this.me.name} 開出「${reward.label}」`);
-    return { ok: true, reward };
+    return { ok: true, reward, amount };
   }
 
   // ---------- 據點管理(主持人)----------

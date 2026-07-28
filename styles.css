@@ -205,3 +205,68 @@ h3{font-size:13px;margin:14px 0 6px;letter-spacing:.06em;color:var(--neutral);}
   .teams-split{grid-template-columns:1fr 1fr;}
   .screen{padding:14px;}
 }
+
+/* ---------- 主持人儀表板 ---------- */
+.host-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--neutral);
+  background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:9px 12px;}
+.host-row .crown{color:var(--hit);}
+.btn.link{display:block;text-align:center;text-decoration:none;line-height:1.4;}
+.hint.left{text-align:left;}
+
+.dash-head{display:flex;align-items:center;justify-content:space-between;}
+.roomcode.small{font-size:24px;}
+.hpbars.big .hpbar{height:30px;}
+.hpbars.big .hpbar span{font-size:13px;}
+.sheet.dash{gap:10px;}
+.dash-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+.dash-stats div{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:9px;text-align:center;font-size:11px;color:var(--neutral);}
+.dash-stats b{display:block;font-family:var(--mono);font-size:17px;color:var(--text);margin-bottom:2px;}
+
+.ptlist.live li{align-items:center;}
+.ptlist.live .cd{font-family:var(--mono);font-size:11px;color:var(--hit);margin-left:auto;}
+.ptlist.live .ready{color:var(--neutral);}
+.dot-own{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.25);flex:0 0 auto;}
+.dot-own.red{background:var(--red);} .dot-own.blue{background:var(--blue);}
+
+.dash-feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;
+  max-height:150px;overflow-y:auto;}
+.dash-feed li{font-size:12px;color:var(--neutral);background:var(--panel);border-radius:7px;padding:7px 10px;}
+.dash-feed li.hit{color:var(--hit);}
+
+.dash-players{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;
+  max-height:200px;overflow-y:auto;}
+.dash-players li{display:flex;align-items:center;gap:8px;background:var(--panel);
+  border-radius:7px;padding:8px 11px;font-size:12px;}
+.dash-players li.off{opacity:.4;}
+.dash-players .stat{margin-left:auto;font-family:var(--mono);color:var(--neutral);font-size:11px;}
+
+/* ---------- 校色工具 ---------- */
+.cal-readout{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0) + 96px);
+  z-index:30;display:flex;justify-content:center;padding:0 14px;}
+.cal-card{background:rgba(11,14,19,.93);border:1.5px solid var(--line);border-radius:12px;
+  padding:12px 16px;font-family:var(--mono);font-size:12px;line-height:1.8;min-width:250px;text-align:center;}
+.cal-card .big{font-size:15px;color:var(--text);}
+.cal-swatch{display:inline-block;width:16px;height:16px;border-radius:4px;vertical-align:-3px;
+  border:1px solid rgba(255,255,255,.4);margin-right:6px;}
+.cal-bar{position:fixed;left:0;right:0;bottom:0;z-index:31;display:flex;gap:8px;
+  padding:12px 14px calc(env(safe-area-inset-bottom,0) + 16px);
+  background:linear-gradient(to top,rgba(11,14,19,.94),transparent);}
+.cal-bar .btn{flex:1;}
+.cal-top{position:fixed;top:0;left:0;right:0;z-index:31;display:flex;gap:8px;align-items:center;
+  padding:calc(env(safe-area-inset-top,0) + 12px) 14px 12px;
+  background:linear-gradient(to bottom,rgba(11,14,19,.92),transparent);}
+.cal-top .btn{padding:8px 11px;font-size:12px;}
+.cal-top .spacer{flex:1;}
+.cal-box{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:29;
+  width:150px;height:150px;border:3px solid var(--hit);border-radius:10px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.35);}
+.cal-result{position:fixed;inset:0;z-index:40;background:var(--void);overflow-y:auto;padding:22px;}
+.cal-result pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:14px;font-size:12px;overflow-x:auto;color:var(--text);white-space:pre-wrap;word-break:break-all;}
+.warn{background:rgba(255,71,87,.14);border:1px solid var(--red);color:var(--red);
+  border-radius:9px;padding:11px 13px;font-size:12px;line-height:1.7;}
+.good{background:rgba(255,212,71,.12);border:1px solid var(--hit);color:var(--hit);
+  border-radius:9px;padding:11px 13px;font-size:12px;line-height:1.7;}
+.samples{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0;}
+.samples i{width:26px;height:26px;border-radius:5px;border:1px solid rgba(255,255,255,.3);display:block;}

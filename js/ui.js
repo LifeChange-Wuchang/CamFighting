@@ -2,7 +2,7 @@
 //  ui.js —— 畫面切換與所有互動
 // ============================================================
 import qrcode from 'https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/+esm';
-import { DEFAULTS, TEAM_LABEL } from './config.js';
+import { DEFAULTS, TEAM_LABEL, CHEST_REWARDS, suggestHp } from './config.js';
 import { Detector } from './detect.js';
 import { GameClient } from './game.js';
 import { Scanner, encodePoint } from './scan.js';
@@ -15,7 +15,7 @@ const el = {
 };
 const screens = {
   home: $('screen-home'), lobby: $('screen-lobby'), game: $('screen-game'),
-  scan: $('screen-scan'), result: $('screen-result')
+  scan: $('screen-scan'), result: $('screen-result'), dash: $('screen-dash')
 };
 
 const game = new GameClient();
@@ -151,8 +151,10 @@ async function leaveRoom() {
 
 // ---------------- 主持人設定 ----------------
 const cfgFields = {
-  startHp: $('cfgHp'), hitDamage: $('cfgDmg'), captureHeal: $('cfgHeal'),
-  captureHoldSec: $('cfgHold'), fireCooldownSec: $('cfgCd'), durationMin: $('cfgDur')
+  startHp: $('cfgHp'), durationMin: $('cfgDur'), hitDamage: $('cfgDmg'),
+  fireCooldownSec: $('cfgCd'), captureHealPct: $('cfgHealPct'),
+  captureHoldSec: $('cfgHold'), captureCooldownSec: $('cfgCapCd'),
+  chestCooldownSec: $('cfgChestCd')
 };
 Object.entries(cfgFields).forEach(([key, input]) => {
   input.onchange = () => {
@@ -162,6 +164,32 @@ Object.entries(cfgFields).forEach(([key, input]) => {
   };
 });
 $('cfgChest').onchange = e => game.updateConfig({ chestEnabled: e.target.checked });
+
+$('cfgHostPlays').onchange = async e => {
+  if (e.target.checked) {
+    const ps = Object.values(game.room?.players || {});
+    const r = ps.filter(p => p.team === 'red').length;
+    const b = ps.filter(p => p.team === 'blue').length;
+    await game.setTeam(r <= b ? 'red' : 'blue');
+  } else {
+    await game.setTeam('host');
+  }
+};
+
+$('btnSuggestHp').onclick = () => {
+  const ps = Object.values(game.room?.players || {});
+  const r = ps.filter(p => p.team === 'red').length;
+  const b = ps.filter(p => p.team === 'blue').length;
+  const per = Math.max(r, b, 1);
+  const dur = Number($('cfgDur').value) || DEFAULTS.durationMin;
+  const hp = suggestHp(per, dur);
+  $('cfgHp').value = hp;
+  game.updateConfig({ startHp: hp });
+  $('hpAdvice').innerHTML =
+    `以每隊 ${per} 人 × ${dur} 分鐘推算,建議血量 <b>${hp}</b>。<br>
+     估算方式是每人每分鐘平均命中 1.5 次。如果你們場地小、人擠人,命中會更頻繁,可以再往上加;
+     場地大、人分散就往下調。第一次辦建議先跑一場 5 分鐘的測試場感覺一下節奏。`;
+};
 
 $('btnAddPoint').onclick = async () => {
   const label = $('ptLabel').value.trim();
@@ -228,6 +256,17 @@ function render(room) {
   }
 
   const players = room.players || {};
+
+  // 主持人單獨一列,不算在任何一隊
+  const hostEntry = Object.entries(players).find(([, p]) => p.isHost);
+  $('hostRow').innerHTML = hostEntry
+    ? `<span class="crown">主持</span><span>${escapeHTML(hostEntry[1].name)}</span>
+       <span style="margin-left:auto">${hostEntry[1].team === 'host' ? '控場中(不下場)' : '也有下場玩'}</span>`
+    : '';
+  if (game.isHost && document.activeElement !== $('cfgHostPlays')) {
+    $('cfgHostPlays').checked = game.myTeam() !== 'host';
+  }
+
   ['red', 'blue'].forEach(team => {
     const list = $(team + 'List');
     const entries = Object.entries(players).filter(([, p]) => p.team === team);
@@ -275,12 +314,19 @@ function render(room) {
     $('hp' + cap(team) + 'Text').textContent = `${TEAM_LABEL[team]} ${hp} / ${max}`;
   });
   const myTeam = game.myTeam();
-  if (myTeam) $('tagTeam').textContent = `你是${TEAM_LABEL[myTeam]} · 拍${TEAM_LABEL[game.enemyTeam()]}頭巾`;
+  if (myTeam && myTeam !== 'host') {
+    $('tagTeam').textContent = `你是${TEAM_LABEL[myTeam]} · 拍${TEAM_LABEL[game.enemyTeam()]}頭巾`;
+  }
+
+  if (game.isSpectator()) renderDash(room);
 
   // --- 狀態切換 ---
   if (status !== lastStatus) {
     lastStatus = status;
-    if (status === 'running') enterGame();
+    if (status === 'running') {
+      if (game.isSpectator()) { keepAwake(true); show('dash'); }
+      else enterGame();
+    }
     else if (status === 'ended') enterResult(room);
     else { // lobby
       scanner.stop(); detector.stopCamera(); cameraReady = false; keepAwake(false);
@@ -290,6 +336,61 @@ function render(room) {
   if (status === 'ended' && current === 'result') fillResult(room);
 }
 
+function renderDash(room) {
+  const cfg = room.config || DEFAULTS;
+  const t = room.teams || {};
+  $('dashCode').textContent = game.code;
+
+  ['red', 'blue'].forEach(team => {
+    const hp = t[team]?.hp ?? 0, max = t[team]?.maxHp || cfg.startHp || 1;
+    $('dash' + cap(team) + 'Fill').style.transform = `scaleX(${Math.max(0, Math.min(1, hp / max))})`;
+    $('dash' + cap(team) + 'Text').textContent = `${TEAM_LABEL[team]} ${hp} / ${max}`;
+  });
+
+  const players = Object.values(room.players || {});
+  const alive = players.filter(p => p.online).length;
+  $('dashStats').innerHTML = `
+    <div><b>${t.red?.hits ?? 0}</b>紅隊命中</div>
+    <div><b>${t.blue?.hits ?? 0}</b>藍隊命中</div>
+    <div><b>${alive}/${players.length}</b>在線人數</div>`;
+
+  // 據點:顯示目前歸屬與冷卻倒數
+  const now = Date.now();
+  const pts = Object.entries(room.points || {});
+  $('dashPoints').innerHTML = pts.length ? '' : '<li style="color:var(--neutral)">尚未設定任何據點</li>';
+  pts.forEach(([id, p]) => {
+    const isChest = p.type === 'chest';
+    const cd = (isChest ? cfg.chestCooldownSec : cfg.captureCooldownSec) * 1000;
+    const left = p.lastAt ? Math.max(0, cd - (now - p.lastAt)) : 0;
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="dot-own ${p.owner || ''}"></span>
+      <span class="tag">${isChest ? '寶箱' : '搶佔'}</span>
+      <span>${escapeHTML(p.label)}</span>
+      <span class="cd ${left ? '' : 'ready'}">${
+        left ? `冷卻 ${Math.ceil(left / 1000)}s`
+             : (isChest ? '可開啟' : (p.owner ? TEAM_LABEL[p.owner] + '持有' : '無人佔領'))}</span>`;
+    $('dashPoints').appendChild(li);
+  });
+
+  // 玩家清單依命中數排序
+  $('dashPlayers').innerHTML = '';
+  Object.values(room.players || {})
+    .filter(p => p.team !== 'host')
+    .sort((a, b) => (b.hits || 0) - (a.hits || 0))
+    .forEach(p => {
+      const li = document.createElement('li');
+      if (!p.online) li.className = 'off';
+      li.innerHTML = `<span class="dot-own ${p.team}"></span><span>${escapeHTML(p.name)}</span>
+        <span class="stat">${p.hits || 0} 命中 · ${p.captures || 0} 佔領 · ${p.chests || 0} 寶箱</span>`;
+      $('dashPlayers').appendChild(li);
+    });
+}
+
+$('btnDashEnd').onclick = () => modal('確定要結束本場?', '所有人會直接進入結算畫面。', [
+  { text: '取消' },
+  { text: '確定結束', primary: true, onClick: () => game.endGame('主持人結束遊戲') }
+]);
+
 function renderFeed(items) {
   const ul = $('feed');
   ul.innerHTML = '';
@@ -298,6 +399,15 @@ function renderFeed(items) {
     li.className = f.type === 'hit' ? 'hit' : (f.type === 'system' ? 'system' : '');
     li.textContent = f.msg;
     ul.appendChild(li);
+  });
+
+  const dul = $('dashFeed');
+  dul.innerHTML = '';
+  items.forEach(f => {
+    const li = document.createElement('li');
+    if (f.type === 'hit') li.className = 'hit';
+    li.textContent = f.msg;
+    dul.appendChild(li);
   });
 }
 
@@ -352,6 +462,7 @@ $('btnAgain').onclick = () => game.backToLobby();
 // ---------------- 開火 ----------------
 $('btnFire').onclick = async () => {
   if (shotBusy || !cameraReady) return;
+  if (game.isSpectator()) return toast('你是控場者,不參與計分');
   const left = game.fireCooldownLeft();
   if (left > 0) { buzz(40); return toast(`冷卻中,還要 ${(left / 1000).toFixed(1)} 秒`); }
 
@@ -473,9 +584,14 @@ setInterval(() => {
 
   const left = Math.max(0, (room.meta.endsAt || 0) - game.now());
   const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
-  const tEl = $('timer');
-  tEl.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  tEl.classList.toggle('low', left < 60000);
+  const txt = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  [$('timer'), $('dashTimer')].forEach(tEl => {
+    tEl.textContent = txt;
+    tEl.classList.toggle('low', left < 60000);
+  });
+
+  // 控場者畫面每秒重畫,冷卻倒數才會跳動
+  if (game.isSpectator()) { renderDash(room); return; }
 
   const cd = game.fireCooldownLeft();
   $('cooldownText').textContent = cd > 0 ? `冷卻 ${(cd / 1000).toFixed(1)}s` : '';

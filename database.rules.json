@@ -39,17 +39,35 @@
           }
         },
         "teams": {
-          ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
           "$team": {
-            ".validate": "$team === 'red' || $team === 'blue'",
             "hp": {
-              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= newData.parent().child('maxHp').val()"
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= newData.parent().child('maxHp').val()",
+              ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
             },
             "hits": {
-              ".validate": "newData.isNumber() && newData.val() >= 0"
+              ".validate": "newData.isNumber() && newData.val() >= 0",
+              ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
             },
             "captures": {
-              ".validate": "newData.isNumber() && newData.val() >= 0"
+              ".validate": "newData.isNumber() && newData.val() >= 0",
+              ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()"
+            },
+            "label": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 8"
+            },
+            "accent": {
+              ".validate": "newData.isString() && newData.val().length <= 9"
+            },
+            "color": {
+              "hue": {
+                ".validate": "newData.isString() && newData.val().length <= 40"
+              },
+              "sat": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1"
+              },
+              "val": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1"
+              }
             }
           }
         },
@@ -60,7 +78,7 @@
               ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12"
             },
             "team": {
-              ".validate": "newData.val() === 'red' || newData.val() === 'blue' || newData.val() === 'host'"
+              ".validate": "newData.val() === 'host' || root.child('rooms').child($code).child('teams').hasChild(newData.val())"
             }
           }
         },
@@ -73,9 +91,7 @@
             "label": {
               ".validate": "newData.isString() && newData.val().length <= 16"
             },
-            "owner": {
-              ".validate": "newData.val() === null || newData.val() === 'red' || newData.val() === 'blue'"
-            }
+            ".validate": "$pid.matches(/^M[0-9][0-9]$/)"
           }
         },
         "feed": {

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0B0E13">
+<title>相機對戰 · 主持人控台</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="console-page">
+
+<!-- ===== 進入畫面 ===== -->
+<section class="screen" id="screen-enter">
+  <div class="sheet">
+    <h1 class="logo">主持人控台</h1>
+    <p class="sub">建立新房間,或用房號接手一個已存在的房間</p>
+    <input id="hostName" class="field" maxlength="12" placeholder="你的名字" autocomplete="off">
+    <button id="btnCreate" class="btn primary">建立新房間</button>
+    <div class="divider"><span>或</span></div>
+    <div class="row">
+      <input id="resumeCode" class="field code" maxlength="4" placeholder="房號" autocomplete="off">
+      <button id="btnResume" class="btn ghost">接手</button>
+    </div>
+    <p class="hint">玩家請用 <a href="index.html" style="color:var(--text)">遊戲頁面</a> 加入</p>
+    <p class="hint" id="enterErr"></p>
+  </div>
+</section>
+
+<!-- ===== 控台本體 ===== -->
+<div class="console hidden" id="console">
+
+  <div class="console-head">
+    <h1>主持人控台</h1>
+    <div class="codechip" id="codeChip">----</div>
+    <span class="badge" id="statusBadge">大廳</span>
+    <div class="grow"></div>
+    <div class="timer" id="hostTimer">--:--</div>
+    <button id="btnJoinQR" class="btn ghost small">加入QR</button>
+    <a href="calibrate.html" target="_blank" class="btn ghost small link">校色工具</a>
+  </div>
+
+  <div class="cols">
+    <!-- 左欄:設定 -->
+    <div>
+      <div class="card">
+        <h2>隊伍設定<span class="grow"></span>
+          <button id="btnAddTeam" class="btn tiny ghost">新增隊伍</button>
+        </h2>
+        <div id="teamList"></div>
+        <p class="note">頭巾顏色請用<b>校色工具</b>對實際布料測量後填入。色相可用逗號分隔多段
+          (紅色會跨過 0 度,例如 <b>0-12,345-360</b>)。<br>
+          <b>飽和度門檻不要設太低</b>:取樣點在額頭,沒戴頭巾時取到的是皮膚,
+          皮膚色相約 10~30 度、飽和度 0.2~0.45,和淡紅色高度重疊。</p>
+      </div>
+
+      <div class="card">
+        <h2>遊戲參數</h2>
+        <div class="grid2">
+          <label class="fieldset">起始血量<input type="number" id="cfgHp" min="10" max="999999"></label>
+          <label class="fieldset">時間(分)<input type="number" id="cfgDur" min="1" max="180"></label>
+          <label class="fieldset">每次擊中扣<input type="number" id="cfgDmg" min="1" max="99"></label>
+          <label class="fieldset">開火冷卻(秒)<input type="number" id="cfgCd" min="0" max="60"></label>
+          <label class="fieldset">佔領回血(%)<input type="number" id="cfgHealPct" min="0" max="100" step="0.5"></label>
+          <label class="fieldset">佔領秒數<input type="number" id="cfgHold" min="1" max="30"></label>
+          <label class="fieldset">據點冷卻(秒)<input type="number" id="cfgCapCd" min="0" max="3600"></label>
+          <label class="fieldset">寶箱冷卻(秒)<input type="number" id="cfgChestCd" min="0" max="3600"></label>
+        </div>
+        <div class="ctrl-row" style="margin-top:12px">
+          <button id="btnSuggestHp" class="btn tiny ghost">依目前人數建議血量</button>
+          <label class="check" style="margin:0"><input type="checkbox" id="cfgChest"> 啟用寶箱</label>
+        </div>
+        <p class="note" id="hpAdvice"></p>
+      </div>
+
+      <div class="card">
+        <h2>標記點<span class="grow"></span>
+          <button id="btnPrint" class="btn tiny ghost">列印QR碼</button>
+        </h2>
+        <p class="note" style="margin:0 0 11px">
+          QR 碼內容是固定編號(M01~M20),<b>不綁房號,印一次可以永久重複使用</b>。
+          每場只要勾選要啟用的編號、指定是搶佔點還是寶箱即可。</p>
+        <div class="markers" id="markerGrid"></div>
+      </div>
+    </div>
+
+    <!-- 右欄:即時狀況 -->
+    <div>
+      <div class="card">
+        <h2>控制</h2>
+        <div class="ctrl-row">
+          <button id="btnStart" class="btn primary">開始遊戲</button>
+          <button id="btnEnd" class="btn ghost">結束本場</button>
+          <button id="btnLobby" class="btn ghost">回到大廳</button>
+        </div>
+        <p class="note" id="ctrlHint"></p>
+      </div>
+
+      <div class="card">
+        <h2>戰況</h2>
+        <div id="hpBlocks"></div>
+        <div class="dash-stats" id="dashStats"></div>
+      </div>
+
+      <div class="card">
+        <h2>據點狀況</h2>
+        <ul class="ptlist live" id="pointStatus"></ul>
+      </div>
+
+      <div class="card">
+        <h2>即時戰報</h2>
+        <ul class="dash-feed" id="feed" style="max-height:210px"></ul>
+      </div>
+
+      <div class="card">
+        <h2>玩家<span class="grow"></span><span class="cnt" id="pCount"></span></h2>
+        <ul class="plist2" id="playerList"></ul>
+      </div>
+
+      <div class="card">
+        <h2>危險操作</h2>
+        <button id="btnClose" class="btn ghost small">永久刪除這個房間</button>
+        <p class="note">刪除後房號與所有紀錄都會消失,但 QR 碼是固定編號,下一場照樣能用。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal hidden" id="modal">
+  <div class="modal-box">
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+    <div class="modal-btns" id="modalBtns"></div>
+  </div>
+</div>
+<div class="toast hidden" id="toast"></div>
+<div class="loading hidden" id="loading"><div class="spinner"></div><p id="loadingText">載入中…</p></div>
+
+<script type="module" src="js/host.js"></script>
+</body>
+</html>

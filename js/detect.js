@@ -2,7 +2,7 @@
 //  detect.js —— 相機、人臉偵測、頭巾顏色判定
 //  這一層完全不碰 Firebase,純粹回報「這一槍打到了沒」
 // ============================================================
-import { DETECT } from './config.js';
+import { DETECT, parseHueRanges } from './config.js';
 
 const MODELS = {
   full: {
@@ -173,11 +173,24 @@ export class Detector {
     return [h, max === 0 ? 0 : d / max, max];
   }
 
-  static matchesTeam(h, s, v, teamKey) {
-    const def = DETECT.teamColors[teamKey];
-    if (!def) return false;
-    if (s < def.sat || v < def.val) return false;
-    return def.hueRanges.some(([lo, hi]) => h >= lo && h <= hi);
+  // 判斷這個顏色屬於哪一隊。回傳 teamId,都不符合則回傳 null。
+  // 多隊同時符合時,取色相最接近該隊範圍中心的那一隊。
+  static identifyTeam(h, s, v, teams) {
+    let best = null, bestDist = Infinity;
+    for (const [id, t] of Object.entries(teams || {})) {
+      const col = t.color;
+      if (!col) continue;
+      if (s < (col.sat ?? 0) || v < (col.val ?? 0)) continue;
+      for (const [lo, hi] of parseHueRanges(col.hue)) {
+        const inside = lo <= hi ? (h >= lo && h <= hi) : (h >= lo || h <= hi);
+        if (!inside) continue;
+        const span = lo <= hi ? (hi - lo) : (360 - lo + hi);
+        let center = lo + span / 2; if (center >= 360) center -= 360;
+        let d = Math.abs(h - center); d = Math.min(d, 360 - d);
+        if (d < bestDist) { bestDist = d; best = id; }
+      }
+    }
+    return best;
   }
 
   // 在臉框「上方」取樣,對應額頭頭巾的位置
@@ -228,9 +241,9 @@ export class Detector {
     return { aim, inAim, ignored: boxes.length - inAim.length };
   }
 
-  // 開一槍。回傳 {hit, title, detail}
-  shoot(enemyTeam) {
-    if (!this.detector) return { hit: false, title: '尚未就緒', detail: '偵測模型還在載入' };
+  // 開一槍。回傳 { found, teamId, detail } —— 由呼叫端決定是敵是友
+  shoot(teams) {
+    if (!this.detector) return { found: false, teamId: null, detail: '偵測模型還在載入' };
     this.paused = true;
     // 先畫一張乾淨畫面(不含準星線),避免取樣時取到準星白線
     this.ctx.drawImage(this.video, 0, 0, this.canvas.width, this.canvas.height);
@@ -241,10 +254,8 @@ export class Detector {
 
     if (!inAim.length) {
       this.drawReticle('#FF4757');
-      return {
-        hit: false, title: '未命中',
-        detail: `準星範圍內沒有偵測到人臉${ignoredNote}<br>請把準星對準對方的臉`
-      };
+      return { found: false, teamId: null,
+               detail: `準星內沒有偵測到人臉${ignoredNote}<br>請把準星對準對方的臉` };
     }
 
     const box = inAim[0];
@@ -255,17 +266,17 @@ export class Detector {
     const sample = this.sampleForehead(box);
     if (!sample) {
       this.drawReticle('#FF4757');
-      return { hit: false, title: '未命中', detail: `偵測到臉,但額頭超出畫面無法取樣${ignoredNote}` };
+      return { found: false, teamId: null, detail: `偵測到臉,但額頭超出畫面無法取樣${ignoredNote}` };
     }
 
     const [h, s, v] = Detector.rgbToHsv(sample.r, sample.g, sample.b);
-    const hit = Detector.matchesTeam(h, s, v, enemyTeam);
-    const enemyLabel = DETECT.teamColors[enemyTeam]?.label ?? enemyTeam;
+    const teamId = Detector.identifyTeam(h, s, v, teams);
+    const accent = teamId ? (teams[teamId].accent || '#FFD447') : '#FF4757';
 
-    this.ctx.strokeStyle = hit ? '#FFD447' : 'rgba(255,255,255,.6)';
+    this.ctx.strokeStyle = accent;
     this.ctx.lineWidth = lw;
     this.ctx.strokeRect(sample.rect.sx, sample.rect.sy, sample.rect.sw, sample.rect.sh);
-    this.drawReticle(hit ? '#FFD447' : '#FF4757');
+    this.drawReticle(accent);
 
     const rgb = `rgb(${Math.round(sample.r)},${Math.round(sample.g)},${Math.round(sample.b)})`;
     const facePct = ((box.width / this.canvas.width) * 100).toFixed(0);
@@ -274,12 +285,7 @@ export class Detector {
       `<span class="swatch" style="background:${rgb}"></span>額頭取樣 ${rgb}<br>` +
       `色相 ${h.toFixed(0)}° · 飽和 ${s.toFixed(2)} · 亮度 ${v.toFixed(2)}`;
 
-    return {
-      hit,
-      title: hit ? '命中!' : '未命中',
-      detail: hit ? diag : `不是${enemyLabel}的頭巾顏色<br>${diag}`,
-      diag
-    };
+    return { found: true, teamId, detail: diag, hsv: [h, s, v] };
   }
 
   release() {

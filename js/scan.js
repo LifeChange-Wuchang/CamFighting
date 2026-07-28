@@ -6,14 +6,18 @@ import jsQR from 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/+esm';
 
 export const QR_PREFIX = 'CBG';   // Camera Battle Game
 
-export function encodePoint(code, pointId, type) {
-  return `${QR_PREFIX}:${type}:${code}:${pointId}`;
+// 標記碼固定為 CBG:M:編號,不含房號,所以同一批 QR 碼可以永久重複使用。
+// 每場遊戲由主持人在控台決定哪幾號啟用、是搶佔點還是寶箱。
+export function encodeMarker(mid) {
+  return `${QR_PREFIX}:M:${mid}`;
 }
 
 export function parseQR(text) {
   const parts = String(text || '').split(':');
-  if (parts[0] !== QR_PREFIX || parts.length < 4) return null;
-  return { type: parts[1], code: parts[2], pointId: parts.slice(3).join(':') };
+  if (parts[0] !== QR_PREFIX || parts[1] !== 'M' || parts.length < 3) return null;
+  const mid = parts[2].trim().toUpperCase();
+  if (!/^M\d{2}$/.test(mid)) return null;
+  return { mid };
 }
 
 export class Scanner {

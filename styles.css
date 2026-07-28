@@ -11,8 +11,11 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:var(--void);color
 .hidden{display:none !important;}
 .offscreen{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
 
-video,canvas#overlay{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
-canvas#overlay{pointer-events:none;}
+video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
+/* 畫布必須透明,否則掃描 QR 時清空畫布後仍會被黑底蓋住看不到鏡頭 */
+canvas#overlay{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;
+  background:transparent;pointer-events:none;}
+canvas#overlay.hide{display:none;}
 .flash{position:fixed;inset:0;z-index:60;pointer-events:none;background:#fff;opacity:0;}
 .flash.on{animation:fl .3s ease-out;}
 @keyframes fl{0%{opacity:.8}100%{opacity:0}}
@@ -270,3 +273,78 @@ h3{font-size:13px;margin:14px 0 6px;letter-spacing:.06em;color:var(--neutral);}
   border-radius:9px;padding:11px 13px;font-size:12px;line-height:1.7;}
 .samples{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0;}
 .samples i{width:26px;height:26px;border-radius:5px;border:1px solid rgba(255,255,255,.3);display:block;}
+
+/* ============================================================
+   主持人控台(桌機 / 平板 / 手機通用)
+   ============================================================ */
+body.console-page{overflow-y:auto;background:var(--void);}
+.console{max-width:1180px;margin:0 auto;padding:20px 18px 60px;}
+.console-head{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:18px;
+  padding-bottom:14px;border-bottom:1px solid var(--line);}
+.console-head h1{font-size:19px;margin:0;letter-spacing:.03em;}
+.console-head .grow{flex:1;}
+.codechip{font-family:var(--mono);font-size:24px;letter-spacing:.2em;font-weight:700;
+  background:var(--panel);border:1.5px solid var(--line);border-radius:10px;padding:7px 14px;}
+.badge{font-size:11px;padding:5px 11px;border-radius:20px;border:1px solid var(--line);
+  color:var(--neutral);font-family:var(--mono);}
+.badge.live{background:rgba(255,212,71,.15);border-color:var(--hit);color:var(--hit);}
+.badge.ended{background:rgba(255,71,87,.15);border-color:var(--red);color:var(--red);}
+
+.cols{display:grid;grid-template-columns:1fr;gap:16px;}
+@media (min-width:900px){ .cols{grid-template-columns:1.05fr .95fr;align-items:start;} }
+
+.card{background:var(--panel);border:1.5px solid var(--line);border-radius:13px;
+  padding:16px;margin-bottom:16px;}
+.card > h2{font-size:14px;margin:0 0 12px;letter-spacing:.05em;
+  display:flex;align-items:center;gap:8px;}
+.card > h2 .grow{flex:1;}
+
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
+.fieldset{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--neutral);}
+.fieldset input,.fieldset select{background:var(--panel2);border:1px solid var(--line);
+  color:var(--text);border-radius:8px;padding:9px 10px;font-size:14px;
+  font-family:var(--mono);width:100%;min-width:0;}
+.fieldset input[type=color]{padding:3px;height:38px;cursor:pointer;}
+.fieldset input:focus,.fieldset select:focus{outline:none;border-color:var(--neutral);}
+
+.teamcard{border:1.5px solid var(--line);border-radius:11px;padding:13px;margin-bottom:11px;
+  background:var(--panel2);}
+.teamcard .top{display:flex;align-items:center;gap:9px;margin-bottom:11px;}
+.teamcard .swatch-lg{width:26px;height:26px;border-radius:7px;flex:0 0 auto;
+  border:1.5px solid rgba(255,255,255,.28);}
+.teamcard .nm{font-size:15px;font-weight:700;flex:1;}
+.teamcard .cnt{font-size:11px;color:var(--neutral);font-family:var(--mono);}
+.teamcard .del{background:none;border:none;color:var(--neutral);font-size:12px;cursor:pointer;}
+.huepreview{height:9px;border-radius:5px;margin-top:9px;
+  background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);position:relative;}
+.huepreview i{position:absolute;top:-3px;height:15px;border-radius:3px;
+  background:rgba(255,255,255,.92);box-shadow:0 0 0 1px rgba(0,0,0,.5);}
+
+.markers{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:9px;}
+.marker{border:1.5px solid var(--line);border-radius:9px;padding:9px;background:var(--panel2);}
+.marker.on{border-color:var(--hit);}
+.marker .mhead{display:flex;align-items:center;gap:7px;margin-bottom:7px;}
+.marker .mid{font-family:var(--mono);font-size:14px;font-weight:700;}
+.marker .mhead label{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--neutral);}
+.marker input[type=text],.marker select{width:100%;background:var(--void);border:1px solid var(--line);
+  color:var(--text);border-radius:6px;padding:6px 7px;font-size:12px;margin-top:5px;font-family:inherit;}
+.marker.off input,.marker.off select{opacity:.4;pointer-events:none;}
+
+.plist2{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;
+  max-height:330px;overflow-y:auto;}
+.plist2 li{display:flex;align-items:center;gap:9px;background:var(--panel2);
+  border-radius:8px;padding:8px 11px;font-size:13px;}
+.plist2 li.off{opacity:.42;}
+.plist2 select{background:var(--void);border:1px solid var(--line);color:var(--text);
+  border-radius:6px;padding:5px 7px;font-size:11px;margin-left:auto;}
+.plist2 .del{background:none;border:none;color:var(--neutral);font-size:11px;cursor:pointer;}
+
+.ctrl-row{display:flex;flex-wrap:wrap;gap:9px;}
+.ctrl-row .btn{flex:1;min-width:130px;}
+.hpblock{margin-bottom:9px;}
+.hpblock .lbl{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
+.hpblock .lbl b{font-family:var(--mono);}
+.hpwrap{height:22px;border-radius:7px;background:rgba(255,255,255,.09);overflow:hidden;}
+.hpwrap i{display:block;height:100%;transform-origin:left;transition:transform .35s ease;}
+.note{font-size:11.5px;color:var(--neutral);line-height:1.7;margin:9px 0 0;}
+.note b{color:var(--text);}

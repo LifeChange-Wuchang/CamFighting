@@ -60,7 +60,8 @@
           <label class="fieldset">時間(分)<input type="number" id="cfgDur" min="1" max="180"></label>
           <label class="fieldset">每次擊中扣<input type="number" id="cfgDmg" min="1" max="99"></label>
           <label class="fieldset">開火冷卻(秒)<input type="number" id="cfgCd" min="0" max="60"></label>
-          <label class="fieldset">佔領回血(%)<input type="number" id="cfgHealPct" min="0" max="100" step="0.5"></label>
+          <label class="fieldset">佔領當下回血(%)<input type="number" id="cfgHealPct" min="0" max="100" step="0.5"></label>
+          <label class="fieldset">持有每分鐘回血(%)<input type="number" id="cfgRegenPct" min="0" max="100" step="0.1"></label>
           <label class="fieldset">佔領秒數<input type="number" id="cfgHold" min="1" max="30"></label>
           <label class="fieldset">據點冷卻(秒)<input type="number" id="cfgCapCd" min="0" max="3600"></label>
           <label class="fieldset">寶箱冷卻(秒)<input type="number" id="cfgChestCd" min="0" max="3600"></label>
@@ -70,6 +71,8 @@
           <label class="check" style="margin:0"><input type="checkbox" id="cfgChest"> 啟用寶箱</label>
         </div>
         <p class="note" id="hpAdvice"></p>
+        <p class="note"><b>持有每分鐘回血</b>是持續性的:每持有一個搶佔點,每分鐘就回復該百分比的血量,
+          持有越多、守越久回越多。<b>這項由本控台負責結算,所以遊戲期間請保持這個分頁開著。</b></p>
       </div>
 
       <div class="card">

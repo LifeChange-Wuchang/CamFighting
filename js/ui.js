@@ -140,7 +140,7 @@ function render(room) {
     const max = t.maxHp || cfg.startHp || 1;
     const pct = Math.max(0, Math.min(1, (t.hp ?? 0) / max));
     return `<div class="hpbar"><i style="background:${t.accent};transform:scaleX(${pct})"></i>
-      <span>${esc(t.label)} ${t.hp ?? 0} / ${max}</span></div>`;
+      <span>${esc(t.label)} ${Math.round(t.hp ?? 0)} / ${max}</span></div>`;
   }).join('');
 
   if (myTeam && myTeam !== 'host') {
@@ -168,13 +168,13 @@ function fillResult(room) {
   const cfg = room.config || DEFAULTS;
   const ranked = ids.map(id => ({ id, ...room.teams[id] })).sort((a, b) => (b.hp ?? 0) - (a.hp ?? 0));
   const top = ranked[0];
-  const tie = ranked.length > 1 && ranked[1].hp === top.hp;
+  const tie = ranked.length > 1 && Math.round(ranked[1].hp ?? 0) === Math.round(top.hp ?? 0);
   $('winnerText').textContent = tie ? '平手!' : `${top.label}獲勝`;
   $('endReason').textContent = room.meta?.endReason || '';
 
   $('resultScores').innerHTML = `<div class="score-row" style="grid-template-columns:repeat(${Math.min(ids.length,2)},1fr)">` +
     ranked.map(t => `<div class="score" style="border-color:${t.accent}88">
-      <b style="color:${t.accent}">${t.hp ?? 0}</b><span>${esc(t.label)}剩餘</span></div>`).join('') + '</div>';
+      <b style="color:${t.accent}">${Math.round(t.hp ?? 0)}</b><span>${esc(t.label)}剩餘</span></div>`).join('') + '</div>';
 
   $('leaderboard').innerHTML = Object.values(room.players || {})
     .filter(p => p.team !== 'host')
@@ -241,7 +241,7 @@ $('btnFire').onclick = async () => {
     if (out.ok) {
       isHit = true; buzz([30, 40, 60]);
       title = '命中!';
-      detail = `${esc(out.label)} -${out.damage},剩餘 ${out.hp}<br>${res.detail}`;
+      detail = `${esc(out.label)} -${out.damage},剩餘 ${Math.round(out.hp)}<br>${res.detail}`;
     } else {
       title = '未計分'; detail = `${out.reason}<br>${res.detail}`; buzz(25);
     }
@@ -312,7 +312,7 @@ $('btnMenu').onclick = () => {
   const t = game.teams();
   modal('選單',
     `<p class="sub">房號 <b>${game.code}</b><br>` +
-    game.teamIds().map(i => `${esc(t[i].label)} ${t[i].hp ?? 0}`).join(' · ') + '</p>',
+    game.teamIds().map(i => `${esc(t[i].label)} ${Math.round(t[i].hp ?? 0)}`).join(' · ') + '</p>',
     [{ text: '返回遊戲' }, { text: '離開房間', onClick: leaveRoom }]);
 };
 

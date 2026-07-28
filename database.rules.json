@@ -36,6 +36,9 @@
           },
           "chestCooldownSec": {
             ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3600"
+          },
+          "holdRegenPct": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
           }
         },
         "teams": {

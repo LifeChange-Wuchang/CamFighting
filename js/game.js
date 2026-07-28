@@ -11,7 +11,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
 
 import {
-  firebaseConfig, DEFAULTS, CHEST_REWARDS, TEAM_PRESETS, teamId, MAX_TEAMS
+  firebaseConfig, DEFAULTS, CHEST_REWARDS, TEAM_PRESETS, teamId, MAX_TEAMS, REGEN_TICK_MS
 } from './config.js';
 
 const CODE_CHARS = 'ACDEFGHJKMNPQRTUVWXY34679';
@@ -208,7 +208,8 @@ export class GameClient {
       'meta/status': 'running',
       'meta/startedAt': startedAt,
       'meta/endsAt': startedAt + cfg.durationMin * 60000,
-      'meta/endReason': null
+      'meta/endReason': null,
+      'meta/lastRegenAt': startedAt
     };
     for (const id of this.teamIds()) {
       patch[`teams/${id}/maxHp`] = cfg.startHp;
@@ -242,14 +243,49 @@ export class GameClient {
 
   async closeRoom() { await remove(ref(this.db, `rooms/${this.code}`)); }
 
-  // 只有主持人跑裁判檢查
+  // 只有主持人跑裁判檢查(勝負判定 + 據點持續回血結算)
   async refereeTick() {
     if (!this.isHost || this.room?.meta?.status !== 'running') return;
+
+    await this.regenTick();
+
     const t = this.teams();
     const alive = Object.entries(t).filter(([, v]) => (v.hp ?? 0) > 0);
     if (alive.length === 1) return this.endGame(`${alive[0][1].label}獲勝:其他隊伍血量歸零`);
     if (alive.length === 0) return this.endGame('所有隊伍同時歸零,平手');
     if (this.room.meta.endsAt && this.now() >= this.room.meta.endsAt) return this.endGame('時間到');
+  }
+
+  // 據點持續回血:持有越多、持有越久,回得越多。
+  // 用「距離上次結算經過多久」計算,所以就算控台分頁被瀏覽器降速,
+  // 恢復時也會把中間漏掉的份量一次補上,不會少算。
+  async regenTick() {
+    const cfg = this.config();
+    const pct = cfg.holdRegenPct || 0;
+    if (pct <= 0) return;
+
+    const now = this.now();
+    const last = this.room.meta.lastRegenAt || now;
+    const dt = now - last;
+    if (dt < REGEN_TICK_MS) return;
+
+    // 統計每隊目前持有幾個搶佔點
+    const held = {};
+    for (const p of Object.values(this.room.points || {})) {
+      if (p.type === 'capture' && p.owner) held[p.owner] = (held[p.owner] || 0) + 1;
+    }
+
+    await update(ref(this.db, `rooms/${this.code}/meta`), { lastRegenAt: now });
+
+    for (const [team, count] of Object.entries(held)) {
+      const info = this.teams()[team];
+      if (!info) continue;
+      const max = info.maxHp || cfg.startHp;
+      const gain = max * (pct / 100) * count * (dt / 60000);
+      if (gain <= 0) continue;
+      await runTransaction(ref(this.db, `rooms/${this.code}/teams/${team}/hp`),
+        cur => (cur === null ? cur : Math.min(max, cur + gain)));
+    }
   }
 
   // ---------- 玩家動作 ----------

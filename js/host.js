@@ -164,7 +164,7 @@ $('btnAddTeam').onclick = () => game.addTeam().catch(e => toast(e.message));
 // ---------- 參數 ----------
 const cfgMap = {
   startHp: 'cfgHp', durationMin: 'cfgDur', hitDamage: 'cfgDmg', fireCooldownSec: 'cfgCd',
-  captureHealPct: 'cfgHealPct', captureHoldSec: 'cfgHold',
+  captureHealPct: 'cfgHealPct', holdRegenPct: 'cfgRegenPct', captureHoldSec: 'cfgHold',
   captureCooldownSec: 'cfgCapCd', chestCooldownSec: 'cfgChestCd'
 };
 Object.entries(cfgMap).forEach(([key, id]) => {
@@ -317,7 +317,7 @@ function render(room) {
     const max = t.maxHp || cfg.startHp || 1;
     const pct = Math.max(0, Math.min(1, (t.hp ?? 0) / max));
     return `<div class="hpblock">
-      <div class="lbl"><span>${esc(t.label)}</span><b>${t.hp ?? 0} / ${max}</b></div>
+      <div class="lbl"><span>${esc(t.label)}</span><b>${Math.round(t.hp ?? 0)} / ${max}</b></div>
       <div class="hpwrap"><i style="background:${t.accent};transform:scaleX(${pct})"></i></div>
     </div>`;
   }).join('');

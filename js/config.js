@@ -2,13 +2,13 @@
 //  設定檔 —— 部署前請先填入你自己的 Firebase 專案設定
 // ============================================================
 export const firebaseConfig = {
-  apiKey:            "請填入你的 apiKey",
-  authDomain:        "你的專案.firebaseapp.com",
-  databaseURL:       "https://你的專案-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId:         "你的專案",
-  storageBucket:     "你的專案.appspot.com",
-  messagingSenderId: "請填入",
-  appId:             "請填入"
+  apiKey: "AIzaSyBX-fjAphNUsPHcrfnxtLYhoJEwpWIgpNM",
+  authDomain: "camfighting.firebaseapp.com",
+  databaseURL: "https://camfighting-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "camfighting",
+  storageBucket: "camfighting.firebasestorage.app",
+  messagingSenderId: "776759783679",
+  appId: "1:776759783679:web:dd53d717d7f0e025ff5cca"
 };
 
 // ---- 遊戲預設參數(建立房間後可在主持人畫面上調整)----

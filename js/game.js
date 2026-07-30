@@ -11,7 +11,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-database.js';
 
 import {
-  firebaseConfig, DEFAULTS, CHEST_REWARDS, TEAM_PRESETS, teamId, MAX_TEAMS, REGEN_TICK_MS
+  firebaseConfig, DEFAULTS, CHEST_REWARDS, TEAM_PRESETS, teamId, MAX_TEAMS, REGEN_TICK_MS,
+  startHpOf, maxHpOf
 } from './config.js';
 
 const CODE_CHARS = 'ACDEFGHJKMNPQRTUVWXY34679';
@@ -71,10 +72,11 @@ export class GameClient {
     if (!code) throw new Error('房號產生失敗,請再試一次');
 
     const teams = {};
+    const max0 = maxHpOf(DEFAULTS), start0 = startHpOf(DEFAULTS);
     TEAM_PRESETS.slice(0, 2).forEach((t, i) => {
       teams[teamId(i + 1)] = {
         label: t.label, accent: t.accent, color: { ...t.color }, order: i + 1,
-        hp: DEFAULTS.startHp, maxHp: DEFAULTS.startHp, hits: 0, captures: 0
+        hp: start0, maxHp: max0, hits: 0, captures: 0
       };
     });
 
@@ -83,6 +85,8 @@ export class GameClient {
       config: { ...DEFAULTS },
       teams
     });
+    // 同時寫一筆索引到自己名下,之後才找得回這個房間
+    await set(ref(this.db, `hostRooms/${this.uid}/${code}`), { createdAt: serverTimestamp() });
     this.isHost = true;
     await this.joinRoom(code, hostName, 'host');
     return code;
@@ -168,10 +172,10 @@ export class GameClient {
     if (ids.length >= MAX_TEAMS) throw new Error(`最多 ${MAX_TEAMS} 隊`);
     let n = 1; while (ids.includes(teamId(n))) n++;
     const preset = TEAM_PRESETS[Math.min(n - 1, TEAM_PRESETS.length - 1)];
-    const hp = this.config().startHp || DEFAULTS.startHp;
+    const cfg = this.config();
     await set(ref(this.db, `rooms/${this.code}/teams/${teamId(n)}`), {
       label: preset.label, accent: preset.accent, color: { ...preset.color },
-      order: ids.length + 1, hp, maxHp: hp, hits: 0, captures: 0
+      order: ids.length + 1, hp: startHpOf(cfg), maxHp: maxHpOf(cfg), hits: 0, captures: 0
     });
     return teamId(n);
   }
@@ -211,9 +215,10 @@ export class GameClient {
       'meta/endReason': null,
       'meta/lastRegenAt': startedAt
     };
+    const maxHp = maxHpOf(cfg), startHp = startHpOf(cfg);
     for (const id of this.teamIds()) {
-      patch[`teams/${id}/maxHp`] = cfg.startHp;
-      patch[`teams/${id}/hp`] = cfg.startHp;
+      patch[`teams/${id}/maxHp`] = maxHp;
+      patch[`teams/${id}/hp`] = startHp;
       patch[`teams/${id}/hits`] = 0;
       patch[`teams/${id}/captures`] = 0;
     }
@@ -241,7 +246,43 @@ export class GameClient {
     });
   }
 
-  async closeRoom() { await remove(ref(this.db, `rooms/${this.code}`)); }
+  async closeRoom(code = this.code) {
+    await remove(ref(this.db, `rooms/${code}`));
+    await remove(ref(this.db, `hostRooms/${this.uid}/${code}`));
+  }
+
+  // 忘記索引但不刪房間(房間還在,只是不再出現在我的清單裡)
+  async forgetRoom(code) {
+    await remove(ref(this.db, `hostRooms/${this.uid}/${code}`));
+  }
+
+  // 我建立過的房間清單。會一併確認房間是否還存在、目前狀態與人數。
+  async myRooms(limit = 24) {
+    const snap = await get(ref(this.db, `hostRooms/${this.uid}`));
+    const idx = snap.val() || {};
+    const codes = Object.keys(idx)
+      .sort((a, b) => (idx[b].createdAt || 0) - (idx[a].createdAt || 0))
+      .slice(0, limit);
+
+    const out = [];
+    for (const code of codes) {
+      const metaSnap = await get(ref(this.db, `rooms/${code}/meta`));
+      if (!metaSnap.exists()) {
+        out.push({ code, createdAt: idx[code].createdAt || 0, missing: true });
+        continue;
+      }
+      const meta = metaSnap.val();
+      const ps = (await get(ref(this.db, `rooms/${code}/players`))).val() || {};
+      out.push({
+        code,
+        createdAt: idx[code].createdAt || meta.createdAt || 0,
+        status: meta.status || 'lobby',
+        players: Object.values(ps).filter(p => p.team !== 'host').length,
+        missing: false
+      });
+    }
+    return out;
+  }
 
   // 只有主持人跑裁判檢查(勝負判定 + 據點持續回血結算)
   async refereeTick() {
@@ -280,7 +321,7 @@ export class GameClient {
     for (const [team, count] of Object.entries(held)) {
       const info = this.teams()[team];
       if (!info) continue;
-      const max = info.maxHp || cfg.startHp;
+      const max = info.maxHp || maxHpOf(cfg);
       const gain = max * (pct / 100) * count * (dt / 60000);
       if (gain <= 0) continue;
       await runTransaction(ref(this.db, `rooms/${this.code}/teams/${team}/hp`),
@@ -339,7 +380,7 @@ export class GameClient {
     });
     if (!tx.committed) return { ok: false, reason: '慢了一步,已被搶走' };
 
-    const max = this.teams()[mine]?.maxHp || this.config().startHp;
+    const max = this.teams()[mine]?.maxHp || maxHpOf(this.config());
     const heal = Math.max(1, Math.round(max * (this.config().captureHealPct || 0) / 100));
     await runTransaction(ref(this.db, `rooms/${this.code}/teams/${mine}/hp`),
       cur => Math.min(max, (cur || 0) + heal));
@@ -372,7 +413,7 @@ export class GameClient {
 
     const reward = pickReward();
     const mine = this.myTeam(), e = reward.effect;
-    const myMax = this.teams()[mine]?.maxHp || this.config().startHp;
+    const myMax = this.teams()[mine]?.maxHp || maxHpOf(this.config());
     let amount = 0;
 
     if (e.type === 'heal') {
@@ -383,7 +424,7 @@ export class GameClient {
       // 多隊伍時,對「所有其他隊伍」各造成傷害
       for (const id of this.teamIds()) {
         if (id === mine) continue;
-        const max = this.teams()[id]?.maxHp || this.config().startHp;
+        const max = this.teams()[id]?.maxHp || maxHpOf(this.config());
         const dmg = Math.max(1, Math.round(max * e.pct / 100));
         amount = dmg;
         await runTransaction(ref(this.db, `rooms/${this.code}/teams/${id}/hp`),

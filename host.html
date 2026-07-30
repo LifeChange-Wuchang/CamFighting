@@ -21,8 +21,14 @@
       <input id="resumeCode" class="field code" maxlength="4" placeholder="房號" autocomplete="off">
       <button id="btnResume" class="btn ghost">接手</button>
     </div>
-    <p class="hint">玩家請用 <a href="index.html" style="color:var(--text)">遊戲頁面</a> 加入</p>
     <p class="hint" id="enterErr"></p>
+
+    <div id="myRoomsWrap" class="hidden">
+      <div class="divider"><span>我建立過的房間</span></div>
+      <ul class="roomlist" id="myRooms"></ul>
+      <button id="btnPurge" class="btn ghost small">清除已結束與已消失的房間</button>
+    </div>
+    <p class="hint">玩家請用 <a href="index.html" style="color:var(--text)">遊戲頁面</a> 加入</p>
   </div>
 </section>
 
@@ -56,7 +62,8 @@
       <div class="card">
         <h2>遊戲參數</h2>
         <div class="grid2">
-          <label class="fieldset">起始血量<input type="number" id="cfgHp" min="10" max="999999"></label>
+          <label class="fieldset">血量上限<input type="number" id="cfgHp" min="10" max="999999"></label>
+          <label class="fieldset">開場血量(%)<input type="number" id="cfgStartPct" min="1" max="100" step="5"></label>
           <label class="fieldset">時間(分)<input type="number" id="cfgDur" min="1" max="180"></label>
           <label class="fieldset">每次擊中扣<input type="number" id="cfgDmg" min="1" max="99"></label>
           <label class="fieldset">開火冷卻(秒)<input type="number" id="cfgCd" min="0" max="60"></label>
@@ -68,6 +75,7 @@
         </div>
         <div class="ctrl-row" style="margin-top:12px">
           <button id="btnSuggestHp" class="btn tiny ghost">依目前人數建議血量</button>
+          <span class="badge" id="hpReadout"></span>
           <label class="check" style="margin:0"><input type="checkbox" id="cfgChest"> 啟用寶箱</label>
         </div>
         <p class="note" id="hpAdvice"></p>
@@ -77,11 +85,14 @@
 
       <div class="card">
         <h2>標記點<span class="grow"></span>
+          <button id="btnDownload" class="btn tiny ghost">下載圖片</button>
           <button id="btnPrint" class="btn tiny ghost">列印QR碼</button>
         </h2>
         <p class="note" style="margin:0 0 11px">
           QR 碼內容是固定編號(M01~M20),<b>不綁房號,印一次可以永久重複使用</b>。
-          每場只要勾選要啟用的編號、指定是搶佔點還是寶箱即可。</p>
+          每場只要勾選要啟用的編號、指定是搶佔點還是寶箱即可。<br>
+          點各卡片的「圖」可以單獨下載,或用上面的<b>下載圖片</b>一次打包全部
+          (含名稱的 PNG 與純 QR 的 SVG),自己排版影印。</p>
         <div class="markers" id="markerGrid"></div>
       </div>
     </div>

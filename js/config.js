@@ -20,12 +20,13 @@ export const markerId = n => 'M' + String(n).padStart(2, '0');
 
 // ---- 遊戲預設參數 ----
 export const DEFAULTS = {
-  startHp:          100,  // 每隊起始血量 —— 務必用控台的「依人數建議」重算
+  maxHp:            100,  // 血量上限(回血回不過這個數字)
+  startHpPct:        70,  // ★ 開場血量佔上限的百分之幾。低於 100 才有回血空間
   hitDamage:          1,  // 每次擊中扣多少血
-  captureHealPct:     1,  // 搶下據點的當下,立刻回復「最大血量的百分之幾」
-  holdRegenPct:       1,  // ★ 每持有一個據點,每分鐘持續回復最大血量的百分之幾
+  captureHealPct:     1,  // 搶下據點的當下,立刻回復「上限的百分之幾」
+  holdRegenPct:       1,  // 每持有一個據點,每分鐘持續回復上限的百分之幾
   captureHoldSec:     5,  // 搶佔需要對準幾秒
-  captureCooldownSec: 0,  // 據點易主後的冷卻(預設 0 = 隨時可以互搶)
+  captureCooldownSec: 0,  // 據點易主後的冷卻(0 = 隨時可以互搶)
   fireCooldownSec:    3,  // 兩次開火之間的冷卻
   durationMin:       20,  // 單場時間(分鐘)
   chestCooldownSec: 180,  // 同一個寶箱多久後才能再開
@@ -36,9 +37,23 @@ export const DEFAULTS = {
 export const REGEN_TICK_MS = 5000;
 
 export const HP_PER_PLAYER_PER_MIN = 1.5;
-export function suggestHp(playersPerTeam, durationMin) {
-  const raw = Math.max(1, playersPerTeam) * Math.max(1, durationMin) * HP_PER_PLAYER_PER_MIN;
-  return Math.max(30, Math.round(raw / 10) * 10);
+
+// 先估出「開場血量」該有多少(人數 × 分鐘 × 每人每分鐘命中數),
+// 再依開場百分比反推血量上限。上限比開場高出來的部分,就是回血的空間。
+export function suggestMaxHp(playersPerTeam, durationMin, startPct = DEFAULTS.startHpPct) {
+  const needStart = Math.max(1, playersPerTeam) * Math.max(1, durationMin) * HP_PER_PLAYER_PER_MIN;
+  const pct = Math.min(100, Math.max(1, startPct)) / 100;
+  return Math.max(30, Math.round(needStart / pct / 10) * 10);
+}
+
+// 依上限與百分比算出實際開場血量
+export function startHpOf(cfg) {
+  const max = cfg.maxHp ?? cfg.startHp ?? DEFAULTS.maxHp;      // startHp 是舊版欄位,保留相容
+  const pct = cfg.startHpPct ?? 100;
+  return Math.max(1, Math.round(max * Math.min(100, Math.max(1, pct)) / 100));
+}
+export function maxHpOf(cfg) {
+  return cfg.maxHp ?? cfg.startHp ?? DEFAULTS.maxHp;
 }
 
 // ---- 隊伍範本 ----

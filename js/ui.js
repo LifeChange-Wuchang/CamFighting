@@ -1,7 +1,7 @@
 // ============================================================
 //  ui.js —— 玩家端畫面與互動
 // ============================================================
-import { DEFAULTS } from './config.js';
+import { DEFAULTS, maxHpOf } from './config.js';
 import { Detector } from './detect.js';
 import { GameClient } from './game.js';
 import { Scanner } from './scan.js';
@@ -137,7 +137,7 @@ function render(room) {
   // --- 遊戲 HUD 血條 ---
   $('hpBars').innerHTML = ids.map(id => {
     const t = room.teams[id];
-    const max = t.maxHp || cfg.startHp || 1;
+    const max = t.maxHp || maxHpOf(cfg) || 1;
     const pct = Math.max(0, Math.min(1, (t.hp ?? 0) / max));
     return `<div class="hpbar"><i style="background:${t.accent};transform:scaleX(${pct})"></i>
       <span>${esc(t.label)} ${Math.round(t.hp ?? 0)} / ${max}</span></div>`;

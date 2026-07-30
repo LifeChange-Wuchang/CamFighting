@@ -3,10 +3,14 @@
 // ============================================================
 import qrcode from 'https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/+esm';
 import {
-  DEFAULTS, MARKER_COUNT, markerId, suggestHp, parseHueRanges, MAX_TEAMS
+  DEFAULTS, MARKER_COUNT, markerId, suggestMaxHp, parseHueRanges, MAX_TEAMS,
+  startHpOf, maxHpOf
 } from './config.js';
 import { GameClient } from './game.js';
 import { encodeMarker } from './scan.js';
+import {
+  qrToCanvas, qrToSVG, canvasToBlob, downloadBlob, downloadAllAsZip, safeName
+} from './qrimage.js';
 
 const $ = id => document.getElementById(id);
 const game = new GameClient();
@@ -58,24 +62,15 @@ $('btnCreate').onclick = async () => {
   finally { loading(false); }
 };
 
-$('btnResume').onclick = async () => {
-  const name = $('hostName').value.trim();
+$('btnResume').onclick = () => {
   const code = $('resumeCode').value.trim().toUpperCase();
-  if (!name) return toast('請先輸入你的名字');
+  if (!$('hostName').value.trim()) return toast('請先輸入你的名字');
   if (code.length < 4) return toast('請輸入 4 位房號');
-  try {
-    loading(true, '連線中…');
-    await game.joinRoom(code, name, 'host');
-    if (!game.isHost) {
-      await game.leave();
-      throw new Error('你不是這個房間的主持人,無法接手');
-    }
-    enterConsole(code);
-  } catch (e) { $('enterErr').innerHTML = explain(e); }
-  finally { loading(false); }
+  resumeRoom(code);
 };
 
 function enterConsole(code) {
+  try { localStorage.setItem('cb_lastRoom', code); } catch (e) {}
   $('screen-enter').classList.add('hidden');
   $('console').classList.remove('hidden');
   $('codeChip').textContent = code;
@@ -83,6 +78,82 @@ function enterConsole(code) {
   game.watchRoom(render);
   game.watchFeed(renderFeed);
   if (!tickTimer) tickTimer = setInterval(tick, 1000);
+}
+
+// ---------- 我建立過的房間 ----------
+const STATUS_TXT = { lobby: '大廳', running: '進行中', ended: '已結束' };
+
+async function loadMyRooms() {
+  let rooms = [];
+  try { rooms = await game.myRooms(); }
+  catch (e) { console.warn('讀取房間清單失敗:', e); return; }
+
+  const wrap = $('myRoomsWrap'), ul = $('myRooms');
+  if (!rooms.length) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  ul.innerHTML = '';
+
+  rooms.forEach(r => {
+    const li = document.createElement('li');
+    if (r.missing) li.className = 'gone';
+    const when = r.createdAt ? new Date(r.createdAt).toLocaleString('zh-TW',
+      { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    li.innerHTML = `<div><div class="rc">${r.code}</div>
+      <div class="meta">${r.missing ? '房間已不存在'
+        : `${STATUS_TXT[r.status] || r.status} · ${r.players} 人`}${when ? '<br>' + when : ''}</div></div>`;
+
+    const acts = document.createElement('div');
+    acts.className = 'acts';
+    if (!r.missing) {
+      const back = document.createElement('button');
+      back.textContent = '接手';
+      back.onclick = () => resumeRoom(r.code);
+      acts.appendChild(back);
+    }
+    const del = document.createElement('button');
+    del.className = 'danger';
+    del.textContent = r.missing ? '移除紀錄' : '刪除';
+    del.onclick = () => {
+      if (r.missing) return game.forgetRoom(r.code).then(loadMyRooms);
+      modal(`刪除房間 ${r.code}?`, '房間資料與紀錄會永久消失,無法復原。', [
+        { text: '取消' },
+        { text: '刪除', primary: true, onClick: async () => {
+            await game.closeRoom(r.code); loadMyRooms(); toast(`已刪除 ${r.code}`);
+          } }
+      ]);
+    };
+    acts.appendChild(del);
+    li.appendChild(acts);
+    ul.appendChild(li);
+  });
+}
+
+$('btnPurge').onclick = () => modal('清除舊房間?',
+  '會刪除所有<b>已結束</b>的房間,以及清掉<b>已不存在</b>房間的紀錄。<br>大廳中與進行中的房間不會被動到。',
+  [{ text: '取消' }, { text: '確定清除', primary: true, onClick: async () => {
+      try {
+        loading(true, '清除中…');
+        const rooms = await game.myRooms(99);
+        let n = 0;
+        for (const r of rooms) {
+          if (r.missing) { await game.forgetRoom(r.code); n++; }
+          else if (r.status === 'ended') { await game.closeRoom(r.code); n++; }
+        }
+        await loadMyRooms();
+        toast(n ? `已清除 ${n} 筆` : '沒有需要清除的房間');
+      } catch (e) { modal('清除失敗', explain(e)); }
+      finally { loading(false); }
+    } }]);
+
+async function resumeRoom(code) {
+  const name = $('hostName').value.trim() || '主持人';
+  try {
+    loading(true, '連線中…');
+    await game.joinRoom(code, name, 'host');
+    if (!game.isHost) { await game.leave(); throw new Error('你不是這個房間的主持人'); }
+    enterConsole(code);
+  } catch (e) { $('enterErr').innerHTML = explain(e); }
+  finally { loading(false); }
 }
 
 // ---------- 隊伍 ----------
@@ -163,7 +234,7 @@ $('btnAddTeam').onclick = () => game.addTeam().catch(e => toast(e.message));
 
 // ---------- 參數 ----------
 const cfgMap = {
-  startHp: 'cfgHp', durationMin: 'cfgDur', hitDamage: 'cfgDmg', fireCooldownSec: 'cfgCd',
+  maxHp: 'cfgHp', startHpPct: 'cfgStartPct', durationMin: 'cfgDur', hitDamage: 'cfgDmg', fireCooldownSec: 'cfgCd',
   captureHealPct: 'cfgHealPct', holdRegenPct: 'cfgRegenPct', captureHoldSec: 'cfgHold',
   captureCooldownSec: 'cfgCapCd', chestCooldownSec: 'cfgChestCd'
 };
@@ -181,13 +252,23 @@ $('btnSuggestHp').onclick = () => {
   Object.values(game.room?.players || {}).forEach(p => { if (counts[p.team] !== undefined) counts[p.team]++; });
   const per = Math.max(1, ...Object.values(counts));
   const dur = Number($('cfgDur').value) || DEFAULTS.durationMin;
-  const hp = suggestHp(per, dur);
-  $('cfgHp').value = hp;
-  game.updateConfig({ startHp: hp });
-  $('hpAdvice').innerHTML = `以最多的一隊 <b>${per}</b> 人 × <b>${dur}</b> 分鐘推算,建議血量 <b>${hp}</b>。
-    估算基準是每人每分鐘平均命中 1.5 次。場地小、人擠人會更高,場地大就更低。
-    <b>第一次辦強烈建議先跑一場 5 分鐘測試場</b>,看血量掉多快再回頭調。`;
+  const pct = Number($('cfgStartPct').value) || DEFAULTS.startHpPct;
+  const max = suggestMaxHp(per, dur, pct);
+  $('cfgHp').value = max;
+  game.updateConfig({ maxHp: max });
+  const start = startHpOf({ maxHp: max, startHpPct: pct });
+  $('hpAdvice').innerHTML =
+    `以最多的一隊 <b>${per}</b> 人 × <b>${dur}</b> 分鐘推算,開場血量需要約 <b>${start}</b>,
+     因此上限設為 <b>${max}</b>(開場 ${pct}%)。<br>
+     估算基準是每人每分鐘平均命中 1.5 次。場地小、人擠人會更高,場地大就更低。
+     <b>第一次辦強烈建議先跑一場 5 分鐘測試場</b>,看血量掉多快再回頭調。`;
 };
+
+// 上限與開場血量的即時換算顯示
+function updateHpReadout(cfg) {
+  const max = maxHpOf(cfg), start = startHpOf(cfg);
+  $('hpReadout').textContent = `開場 ${start} / 上限 ${max} · 回血空間 ${max - start}`;
+}
 
 // ---------- 標記點 ----------
 function buildMarkerGrid() {
@@ -200,6 +281,7 @@ function buildMarkerGrid() {
     d.dataset.mid = mid;
     d.innerHTML = `
       <div class="mhead"><span class="mid">${mid}</span>
+        <button class="imgbtn" data-role="img" title="下載這一張的圖片">圖</button>
         <label><input type="checkbox" data-role="on"> 啟用</label></div>
       <select data-role="type">
         <option value="capture">搶佔點</option>
@@ -213,6 +295,7 @@ function buildMarkerGrid() {
       ? game.setMarker(mid, { type: type.value, label: label.value.trim() || mid })
       : game.clearMarker(mid);
     on.onchange = save; type.onchange = save; label.onchange = save;
+    d.querySelector('[data-role=img]').onclick = () => showMarkerImage(mid);
     grid.appendChild(d);
   }
 }
@@ -233,6 +316,74 @@ function renderMarkers(room) {
     }
   });
 }
+
+// ---------- QR 圖片下載 ----------
+function markerMeta(mid) {
+  const p = game.room?.points?.[mid];
+  return {
+    id: mid,
+    text: encodeMarker(mid),
+    label: p ? p.label : '',
+    sub: p ? (p.type === 'capture' ? '搶佔點' : '寶箱') : '通用標記'
+  };
+}
+
+function showMarkerImage(mid) {
+  const m = markerMeta(mid);
+  const preview = qrToCanvas(m.text, { size: 480, label: m.label || m.id, sub: m.sub });
+  modal(`${mid} 的 QR 圖片`,
+    `<div class="qr-holder">
+       <img src="${preview.toDataURL('image/png')}" style="width:210px;height:auto">
+       <div class="qr-caption">${m.label ? esc(m.label) + ' · ' : ''}${m.sub}</div>
+     </div>
+     <p class="note">PNG 是高解析點陣圖(含名稱),直接印就很清楚。<br>
+        SVG 是向量圖,放到多大都不會糊,適合丟進排版軟體自己調。</p>`,
+    [
+      { text: '下載 PNG', primary: true, onClick: async () => {
+          const cv = qrToCanvas(m.text, { label: m.label || m.id, sub: m.sub });
+          downloadBlob(await canvasToBlob(cv), safeName(m.label ? `${mid}_${m.label}` : mid) + '.png');
+        } },
+      { text: '下載純QR的SVG', onClick: () => {
+          const svg = qrToSVG(m.text);
+          downloadBlob(new Blob([svg], { type: 'image/svg+xml' }),
+                       safeName(m.label ? `${mid}_${m.label}` : mid) + '.svg');
+        } },
+      { text: '關閉' }
+    ]);
+}
+
+$('btnDownload').onclick = () => {
+  const pts = game.room?.points || {};
+  const enabled = Object.keys(pts).sort();
+  const useAll = enabled.length === 0;
+  const ids = useAll ? Array.from({ length: MARKER_COUNT }, (_, i) => markerId(i + 1)) : enabled;
+
+  modal('下載標記圖片',
+    (useAll
+      ? '<p class="note">目前沒有啟用任何編號,將打包全部 20 組<b>通用標記</b>(只有編號、沒有名稱)。</p>'
+      : `<p class="note">將打包本場啟用的 <b>${ids.length}</b> 組標記。</p>`) +
+    `<p class="note">ZIP 內含兩個資料夾:<br>
+       <b>含名稱_PNG</b> — 高解析點陣圖,附編號與名稱,可直接印<br>
+       <b>純QR碼_SVG</b> — 向量圖,沒有文字,方便你自己排版</p>
+     <p class="note" id="zipProgress"></p>`,
+    [
+      { text: '取消' },
+      { text: '開始打包', primary: true, onClick: async () => {
+          try {
+            loading(true, '產生圖片中…');
+            await downloadAllAsZip(
+              ids.map(markerMeta),
+              `標記QR碼_${game.code}.zip`,
+              (i, n) => loading(true, `產生圖片中… ${i}/${n}`)
+            );
+            toast('已開始下載 ZIP');
+          } catch (e) {
+            console.error(e);
+            modal('打包失敗', String(e.message || e));
+          } finally { loading(false); }
+        } }
+    ]);
+};
 
 $('btnPrint').onclick = () => {
   const pts = game.room?.points || {};
@@ -287,7 +438,10 @@ $('btnEnd').onclick = () => modal('結束本場?', '所有人會進入結算畫�
   [{ text: '取消' }, { text: '確定結束', primary: true, onClick: () => game.endGame() }]);
 $('btnLobby').onclick = () => game.backToLobby();
 $('btnClose').onclick = () => modal('永久刪除房間?', '此動作無法復原。',
-  [{ text: '取消' }, { text: '刪除', primary: true, onClick: async () => { await game.closeRoom(); location.reload(); } }]);
+  [{ text: '取消' }, { text: '刪除', primary: true, onClick: async () => {
+      try { localStorage.removeItem('cb_lastRoom'); } catch (e) {}
+      await game.closeRoom(); location.reload();
+    } }]);
 
 // ---------- 渲染 ----------
 function render(room) {
@@ -307,6 +461,7 @@ function render(room) {
     if (document.activeElement !== $(id)) $(id).value = cfg[key] ?? DEFAULTS[key];
   });
   if (document.activeElement !== $('cfgChest')) $('cfgChest').checked = cfg.chestEnabled !== false;
+  updateHpReadout(cfg);
 
   renderTeams(room);
   renderMarkers(room);
@@ -314,7 +469,7 @@ function render(room) {
   // 戰況
   $('hpBlocks').innerHTML = game.teamIds().map(id => {
     const t = room.teams[id];
-    const max = t.maxHp || cfg.startHp || 1;
+    const max = t.maxHp || maxHpOf(cfg) || 1;
     const pct = Math.max(0, Math.min(1, (t.hp ?? 0) / max));
     return `<div class="hpblock">
       <div class="lbl"><span>${esc(t.label)}</span><b>${Math.round(t.hp ?? 0)} / ${max}</b></div>
@@ -407,7 +562,11 @@ function tick() {
     loading(true, '連線中…');
     await game.init();
     const r = new URLSearchParams(location.search).get('room');
+    let last = null;
+    try { last = localStorage.getItem('cb_lastRoom'); } catch (e) {}
     if (r) $('resumeCode').value = r.toUpperCase();
+    else if (last) $('resumeCode').value = last;
+    await loadMyRooms();
   } catch (e) { $('enterErr').innerHTML = explain(e); }
   finally { loading(false); }
 })();

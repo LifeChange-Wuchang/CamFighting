@@ -7,6 +7,7 @@ import {
   startHpOf, maxHpOf
 } from './config.js';
 import { GameClient } from './game.js';
+import { PlayUI } from './play.js';
 import { encodeMarker } from './scan.js';
 import {
   qrToCanvas, qrToSVG, canvasToBlob, downloadBlob, downloadAllAsZip, safeName
@@ -14,8 +15,23 @@ import {
 
 const $ = id => document.getElementById(id);
 const game = new GameClient();
+let playing = false;
 let tickTimer = null;
-let started = false;
+let wakeLock = null;
+let lastRefTick = 0;
+
+// 遊戲進行中讓螢幕不要休眠,否則裝置一睡著,回血與計時就停了
+async function keepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator) { if (!wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }
+    else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch (e) { /* 不支援就算了 */ }
+}
+document.addEventListener('visibilitychange', () => {
+  const running = game.room?.meta?.status === 'running';
+  $('hiddenWarn').classList.toggle('hidden', !(document.hidden && running));
+  if (!document.hidden && running) { keepAwake(true); tick(); }   // 切回來立刻補算一次
+});
 
 // ---------- 小工具 ----------
 const esc = s => String(s).replace(/[&<>"']/g, c =>
@@ -79,6 +95,53 @@ function enterConsole(code) {
   game.watchFeed(renderFeed);
   if (!tickTimer) tickTimer = setInterval(tick, 1000);
 }
+
+// ---------- 下場玩 ----------
+//  刻意做在同一個分頁裡:控台與遊戲共用一個前景頁面,
+//  裁判邏輯就不會因為切到別的分頁被瀏覽器降速。
+const play = new PlayUI($('playRoot'), game, {
+  toast, modal, loading,
+  menuLabel: '控台',
+  onMenu: () => backToConsole()
+});
+
+async function enterPlay() {
+  if (game.room?.meta?.status !== 'running') return toast('遊戲還沒開始');
+  if (game.isSpectator()) {
+    const ids = game.teamIds();
+    const counts = {};
+    ids.forEach(i => counts[i] = 0);
+    Object.values(game.room.players || {}).forEach(p => { if (counts[p.team] !== undefined) counts[p.team]++; });
+    const btns = ids.map(id => ({
+      text: `加入${game.teamLabel(id)}(${counts[id]}人)`,
+      primary: id === ids.reduce((a, b) => counts[a] <= counts[b] ? a : b),
+      onClick: async () => { await game.setTeam(id); startPlay(); }
+    }));
+    btns.push({ text: '取消' });
+    return modal('要加入哪一隊?', '<p class="note">下場後你會開始計分。之後隨時可以按「控台」切回來。</p>', btns);
+  }
+  startPlay();
+}
+
+async function startPlay() {
+  const ok = await play.start();
+  if (ok === false) return;
+  playing = true;
+  $('console').classList.add('hidden');
+  $('btnBackConsole').classList.remove('hidden');
+  play.render(game.room);
+}
+
+function backToConsole() {
+  playing = false;
+  play.stop();
+  $('btnBackConsole').classList.add('hidden');
+  $('console').classList.remove('hidden');
+  if (game.room) render(game.room);
+}
+
+$('btnPlay').onclick = enterPlay;
+$('btnBackConsole').onclick = backToConsole;
 
 // ---------- 我建立過的房間 ----------
 const STATUS_TXT = { lobby: '大廳', running: '進行中', ended: '已結束' };
@@ -439,6 +502,7 @@ $('btnEnd').onclick = () => modal('結束本場?', '所有人會進入結算畫�
 $('btnLobby').onclick = () => game.backToLobby();
 $('btnClose').onclick = () => modal('永久刪除房間?', '此動作無法復原。',
   [{ text: '取消' }, { text: '刪除', primary: true, onClick: async () => {
+      play.stop();
       try { localStorage.removeItem('cb_lastRoom'); } catch (e) {}
       await game.closeRoom(); location.reload();
     } }]);
@@ -446,6 +510,9 @@ $('btnClose').onclick = () => modal('永久刪除房間?', '此動作無法復�
 // ---------- 渲染 ----------
 function render(room) {
   if (!room) { toast('房間已不存在'); return; }
+  play.render(room);
+  $('btnPlay').classList.toggle('hidden', room.meta?.status !== 'running');
+  if (playing) return;                 // 正在玩,控台在背後不用重畫
   const cfg = room.config || DEFAULTS;
   const status = room.meta?.status || 'lobby';
 
@@ -537,6 +604,8 @@ function renderPlayers(room) {
 }
 
 function renderFeed(items) {
+  play.renderFeed(items);
+  if (playing) return;
   $('feed').innerHTML = items.map(f =>
     `<li class="${f.type === 'hit' ? 'hit' : ''}">${esc(f.msg)}</li>`).join('');
 }
@@ -544,15 +613,25 @@ function renderFeed(items) {
 function tick() {
   const room = game.room;
   if (!room) return;
+  play.tick();
   if (room.meta?.status === 'running') {
+    keepAwake(true);
     const left = Math.max(0, (room.meta.endsAt || 0) - game.now());
     const m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
     $('hostTimer').textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     $('hostTimer').classList.toggle('low', left < 60000);
-    renderPoints(room);   // 冷卻倒數每秒更新
-    game.refereeTick();
+    if (!playing) renderPoints(room);   // 冷卻倒數每秒更新
+    game.refereeTick().then(() => { lastRefTick = Date.now(); }).catch(e => console.warn(e));
+    if (playing) return;
+    const age = Math.round((Date.now() - lastRefTick) / 1000);
+    const ok = lastRefTick && age < 15;
+    $('refBadge').textContent = ok ? '裁判運作中' : (lastRefTick ? `裁判延遲 ${age}s` : '裁判啟動中');
+    $('refBadge').className = 'badge ' + (ok ? 'live' : 'ended');
   } else {
     $('hostTimer').textContent = '--:--';
+    $('refBadge').textContent = '';
+    $('refBadge').className = 'badge';
+    keepAwake(false);
   }
 }
 

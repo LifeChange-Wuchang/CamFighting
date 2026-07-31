@@ -9,10 +9,7 @@
 </head>
 <body>
 
-<video id="video" playsinline muted></video>
-<canvas id="overlay"></canvas>
-<canvas id="scanwork" class="offscreen"></canvas>
-<div class="flash" id="flash"></div>
+<div id="playRoot"></div>
 <div id="netBadge" class="net-badge hidden">離線 · 重新連線中…</div>
 
 <!-- ========== 首頁 ========== -->
@@ -40,45 +37,6 @@
     <p class="hint" id="lobbyHint">等待主持人開始…</p>
     <button id="btnLeave" class="btn ghost small">離開房間</button>
   </div>
-</section>
-
-<!-- ========== 遊戲中 ========== -->
-<section class="screen overlay-screen hidden" id="screen-game">
-  <div class="hud-top">
-    <div class="hpbars" id="hpBars"></div>
-    <div class="timer" id="timer">--:--</div>
-  </div>
-  <div class="tagline"><span id="tagTeam"></span><span id="tagModel"></span></div>
-  <ul class="feed" id="feed"></ul>
-  <div class="buffs" id="buffs"></div>
-
-  <div class="hud-bottom">
-    <button id="btnScan" class="btn round ghost">掃描</button>
-    <button id="btnFire" class="shutter" aria-label="開火"><span></span></button>
-    <button id="btnMenu" class="btn round ghost">選單</button>
-  </div>
-  <div class="cooldown" id="cooldownText"></div>
-
-  <div class="shot-result" id="shotResult">
-    <div class="sr-title" id="srTitle"></div>
-    <div class="sr-detail" id="srDetail"></div>
-    <div class="sr-hint">點畫面繼續</div>
-  </div>
-  <div class="dismiss-layer hidden" id="dismissLayer"></div>
-</section>
-
-<!-- ========== 掃描 ========== -->
-<section class="screen overlay-screen hidden" id="screen-scan">
-  <div class="scan-frame">
-    <div class="scan-ring">
-      <svg viewBox="0 0 120 120">
-        <circle cx="60" cy="60" r="54" class="ring-bg"/>
-        <circle cx="60" cy="60" r="54" class="ring-fg" id="scanRing"/>
-      </svg>
-    </div>
-  </div>
-  <div class="scan-info" id="scanInfo">把標記的 QR 碼對準圓框內</div>
-  <button id="btnScanClose" class="btn ghost small floating">取消</button>
 </section>
 
 <!-- ========== 結算 ========== -->

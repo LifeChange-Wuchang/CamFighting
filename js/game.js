@@ -233,6 +233,21 @@ export class GameClient {
     await this.pushFeed('system', '遊戲開始!');
   }
 
+  // 交易保護:就算多個裝置同時判定該結束,也只有一個會真的寫入
+  async endGameIfRunning(reason) {
+    const tx = await runTransaction(ref(this.db, `rooms/${this.code}/meta/status`), cur => {
+      if (cur !== 'running') return;      // 已經不是進行中,放棄
+      return 'ended';
+    });
+    if (!tx.committed) return false;
+    // 這兩筆只有主持人寫得進去,玩家端寫入失敗不影響結果
+    try {
+      await update(ref(this.db, `rooms/${this.code}/meta`), { endedAt: this.now(), endReason: reason });
+    } catch (e) { /* 玩家端沒有權限,略過 */ }
+    try { await this.pushFeed('system', reason); } catch (e) {}
+    return true;
+  }
+
   async endGame(reason = '主持人結束遊戲') {
     await update(ref(this.db, `rooms/${this.code}/meta`), {
       status: 'ended', endedAt: this.now(), endReason: reason
@@ -292,31 +307,39 @@ export class GameClient {
 
     const t = this.teams();
     const alive = Object.entries(t).filter(([, v]) => (v.hp ?? 0) > 0);
-    if (alive.length === 1) return this.endGame(`${alive[0][1].label}獲勝:其他隊伍血量歸零`);
-    if (alive.length === 0) return this.endGame('所有隊伍同時歸零,平手');
-    if (this.room.meta.endsAt && this.now() >= this.room.meta.endsAt) return this.endGame('時間到');
+    if (alive.length === 1) return this.endGameIfRunning(`${alive[0][1].label}獲勝:其他隊伍血量歸零`);
+    if (alive.length === 0) return this.endGameIfRunning('所有隊伍同時歸零,平手');
+    if (this.room.meta.endsAt && this.now() >= this.room.meta.endsAt) return this.endGameIfRunning('時間到');
   }
 
   // 據點持續回血:持有越多、持有越久,回得越多。
-  // 用「距離上次結算經過多久」計算,所以就算控台分頁被瀏覽器降速,
-  // 恢復時也會把中間漏掉的份量一次補上,不會少算。
+  //
+  //  用交易搶佔 lastRegenAt:同一個時間區間只有一個裝置會結算成功,
+  //  所以就算之後有多個裝置同時在跑,也不會重複加血。
+  //  結算量是依「距離上次結算過了多久」計算,分頁被瀏覽器降速也不會少算,
+  //  恢復時會把中間漏掉的份量一次補上。
   async regenTick() {
     const cfg = this.config();
     const pct = cfg.holdRegenPct || 0;
     if (pct <= 0) return;
 
     const now = this.now();
-    const last = this.room.meta.lastRegenAt || now;
-    const dt = now - last;
-    if (dt < REGEN_TICK_MS) return;
+    let prev = null;
+    const tx = await runTransaction(ref(this.db, `rooms/${this.code}/meta/lastRegenAt`), cur => {
+      if (cur === null || cur === undefined) { prev = now; return now; }
+      if (now - cur < REGEN_TICK_MS) return;    // 還不到結算時間,放棄
+      prev = cur;
+      return now;
+    });
+    if (!tx.committed || prev === null) return;
 
-    // 統計每隊目前持有幾個搶佔點
+    const dt = now - prev;
+    if (dt <= 0) return;
+
     const held = {};
     for (const p of Object.values(this.room.points || {})) {
       if (p.type === 'capture' && p.owner) held[p.owner] = (held[p.owner] || 0) + 1;
     }
-
-    await update(ref(this.db, `rooms/${this.code}/meta`), { lastRegenAt: now });
 
     for (const [team, count] of Object.entries(held)) {
       const info = this.teams()[team];
@@ -327,6 +350,16 @@ export class GameClient {
       await runTransaction(ref(this.db, `rooms/${this.code}/teams/${team}/hp`),
         cur => (cur === null ? cur : Math.min(max, cur + gain)));
     }
+    this.lastRefereeAt = this.now();
+  }
+
+  // 玩家端的保險:時間早就過了但遊戲還沒結束(通常代表控台關掉了),
+  // 超過 30 秒仍未結束就由玩家端代為收尾,避免整場卡住。
+  async watchdogTick() {
+    const meta = this.room?.meta;
+    if (!meta || meta.status !== 'running' || !meta.endsAt) return;
+    if (this.now() < meta.endsAt + 30000) return;
+    try { await this.endGameIfRunning('時間到'); } catch (e) { /* 沒權限就算了 */ }
   }
 
   // ---------- 玩家動作 ----------

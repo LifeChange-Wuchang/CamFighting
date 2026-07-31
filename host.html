@@ -35,12 +35,18 @@
 <!-- ===== 控台本體 ===== -->
 <div class="console hidden" id="console">
 
+  <div id="hiddenWarn" class="net-badge hidden" style="background:var(--hit);color:#241c00">
+    ⚠️ 這個分頁在背景,據點回血與計時可能延遲。請把控台切回前景。
+  </div>
+
   <div class="console-head">
     <h1>主持人控台</h1>
     <div class="codechip" id="codeChip">----</div>
     <span class="badge" id="statusBadge">大廳</span>
     <div class="grow"></div>
     <div class="timer" id="hostTimer">--:--</div>
+    <span class="badge" id="refBadge" title="裁判運作狀態"></span>
+    <button id="btnPlay" class="btn primary small hidden">下場玩</button>
     <button id="btnJoinQR" class="btn ghost small">加入QR</button>
     <a href="calibrate.html" target="_blank" class="btn ghost small link">校色工具</a>
   </div>
@@ -138,6 +144,9 @@
     </div>
   </div>
 </div>
+
+<div id="playRoot"></div>
+<button id="btnBackConsole" class="btn ghost small back-console hidden">回控台</button>
 
 <div class="modal hidden" id="modal">
   <div class="modal-box">

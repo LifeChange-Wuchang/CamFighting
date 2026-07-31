@@ -6,10 +6,15 @@
         ".write": "auth != null && (!data.exists() || data.child('meta/hostUid').val() === auth.uid)",
         "meta": {
           "status": {
-            ".validate": "newData.val() === 'lobby' || newData.val() === 'running' || newData.val() === 'ended'"
+            ".validate": "newData.val() === 'lobby' || newData.val() === 'running' || newData.val() === 'ended'",
+            ".write": "auth != null && (root.child('rooms').child($code).child('meta').child('hostUid').val() === auth.uid || (data.val() === 'running' && newData.val() === 'ended' && now > root.child('rooms').child($code).child('meta').child('endsAt').val() + 30000 && root.child('rooms').child($code).child('players').child(auth.uid).exists()))"
           },
           "hostUid": {
             ".validate": "newData.isString()"
+          },
+          "lastRegenAt": {
+            ".write": "auth != null && root.child('rooms').child($code).child('players').child(auth.uid).exists()",
+            ".validate": "newData.isNumber()"
           }
         },
         "config": {

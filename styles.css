@@ -11,11 +11,21 @@ html,body{margin:0;padding:0;width:100%;height:100%;background:var(--void);color
 .hidden{display:none !important;}
 .offscreen{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
 
-video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
+video.camfeed{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
 /* 畫布必須透明,否則掃描 QR 時清空畫布後仍會被黑底蓋住看不到鏡頭 */
-canvas#overlay{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;
+canvas.overlay{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;
   background:transparent;pointer-events:none;}
-canvas#overlay.hide{display:none;}
+canvas.overlay.hide{display:none;}
+
+/* 下場玩的容器:未啟用時完全不佔空間,啟用時蓋滿整個畫面 */
+.playroot{display:none;}
+.playroot.on{display:block;position:fixed;inset:0;z-index:30;}
+.playroot .flash{position:fixed;inset:0;z-index:60;pointer-events:none;background:#fff;opacity:0;}
+.playroot .flash.on{animation:fl .3s ease-out;}
+.play-view{position:fixed;inset:0;z-index:32;pointer-events:none;}
+.play-view > *{pointer-events:auto;}
+.play-view .feed,.play-view .buffs,.play-view .cooldown,
+.play-view .tagline,.play-view .scan-frame{pointer-events:none;}
 .flash{position:fixed;inset:0;z-index:60;pointer-events:none;background:#fff;opacity:0;}
 .flash.on{animation:fl .3s ease-out;}
 @keyframes fl{0%{opacity:.8}100%{opacity:0}}
@@ -365,3 +375,9 @@ body.console-page{overflow-y:auto;background:var(--void);}
   border-radius:6px;font-size:11px;padding:6px 9px;cursor:pointer;}
 .roomlist .acts button.danger{color:var(--red);border-color:rgba(255,71,87,.4);}
 .roomlist li.gone{opacity:.5;}
+
+/* 主持人下場玩時,右上角固定一顆回控台按鈕 */
+.back-console{position:fixed;z-index:50;
+  top:calc(env(safe-area-inset-top,0) + 12px);
+  left:calc(env(safe-area-inset-left,0) + 12px);}
+@media (orientation:landscape){ .back-console{top:12px;left:12px;} }

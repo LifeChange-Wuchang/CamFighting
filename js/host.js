@@ -107,7 +107,7 @@ const play = new PlayUI($('playRoot'), game, {
 
 async function enterPlay() {
   if (game.room?.meta?.status !== 'running') return toast('遊戲還沒開始');
-  if (game.isSpectator()) {
+  if (game.isSpectator()) {   // 還沒選隊伍才問;在大廳選好的話直接進場
     const ids = game.teamIds();
     const counts = {};
     ids.forEach(i => counts[i] = 0);
@@ -294,6 +294,31 @@ function renderTeams(room) {
 }
 
 $('btnAddTeam').onclick = () => game.addTeam().catch(e => toast(e.message));
+
+// 開始前就能選好自己要控場還是加入哪一隊
+function renderMyTeam(room) {
+  const wrap = $('myTeamOpts');
+  const mine = game.myTeam();
+  const opts = [{ id: 'host', label: '只控場', accent: '#6b7684' }]
+    .concat(game.teamIds().map(id => ({ id, label: room.teams[id].label, accent: room.teams[id].accent })));
+
+  const sig = opts.map(o => o.id + o.label + o.accent).join('|') + '#' + mine;
+  if (wrap.dataset.sig === sig) return;
+  wrap.dataset.sig = sig;
+
+  wrap.innerHTML = '';
+  opts.forEach(o => {
+    const b = document.createElement('button');
+    b.dataset.on = (o.id === mine) ? 'true' : 'false';
+    b.innerHTML = `<span class="sw" style="background:${o.accent}"></span>${esc(o.label)}`;
+    b.onclick = async () => {
+      await game.setTeam(o.id);
+      if (o.id === 'host' && playing) backToConsole();
+      toast(o.id === 'host' ? '你現在是控場者,不參與計分' : `你已加入${o.label}`);
+    };
+    wrap.appendChild(b);
+  });
+}
 
 // ---------- 參數 ----------
 const cfgMap = {
@@ -491,10 +516,13 @@ $('btnStart').onclick = () => {
   Object.values(game.room?.players || {}).forEach(p => { if (counts[p.team] !== undefined) counts[p.team]++; });
   const empty = game.teamIds().filter(i => counts[i] === 0).map(i => game.teamLabel(i));
   if (empty.length) return toast(`${empty.join('、')}還沒有人`);
+  const myTeam = game.myTeam();
+  const soloWarn = (myTeam && myTeam !== 'host' && counts[myTeam] === 1)
+    ? `<p class="note">⚠️ ${esc(game.teamLabel(myTeam))}目前只有你一個人。</p>` : '';
   const pts = Object.keys(game.room?.points || {}).length;
   modal('開始遊戲?',
     game.teamIds().map(i => `${esc(game.teamLabel(i))} ${counts[i]} 人`).join(' · ') +
-    (pts === 0 ? '<p class="note">目前沒有啟用任何標記點,將只能靠拍照得分。</p>' : `<p class="note">啟用 ${pts} 個標記點</p>`),
+    (pts === 0 ? '<p class="note">目前沒有啟用任何標記點,將只能靠拍照得分。</p>' : `<p class="note">啟用 ${pts} 個標記點</p>`) + soloWarn,
     [{ text: '再等等' }, { text: '開始', primary: true, onClick: () => game.startGame() }]);
 };
 $('btnEnd').onclick = () => modal('結束本場?', '所有人會進入結算畫面。',
@@ -531,6 +559,7 @@ function render(room) {
   updateHpReadout(cfg);
 
   renderTeams(room);
+  renderMyTeam(room);
   renderMarkers(room);
 
   // 戰況

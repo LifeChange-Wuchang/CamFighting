@@ -21,6 +21,13 @@ const TEMPLATE = `
   <div class="tagline"><span class="tag-team"></span><span class="tag-model"></span></div>
   <ul class="feed"></ul>
   <div class="buffs"></div>
+
+  <button class="pt-toggle act-points" title="據點狀態">據點</button>
+  <div class="pt-panel hidden">
+    <div class="pt-head"><span>據點狀態</span><button class="act-ptclose">✕</button></div>
+    <ul class="pt-list"></ul>
+    <div class="pt-foot"></div>
+  </div>
   <div class="hud-bottom">
     <button class="btn round ghost act-scan">掃描</button>
     <button class="shutter act-fire" aria-label="開火"><span></span></button>
@@ -71,11 +78,14 @@ export class PlayUI {
     this.cameraReady = false;
     this.shotBusy = false;
     this.wakeLock = null;
+    this.pointsOpen = false;
 
     q('.act-fire').onclick = () => this.fire();
     q('.act-scan').onclick = () => this.openScan();
     q('.act-scanclose').onclick = () => this.closeScan();
     q('.act-menu').onclick = () => this.opts.onMenu?.();
+    q('.act-points').onclick = () => this.togglePoints();
+    q('.act-ptclose').onclick = () => this.togglePoints(false);
     q('.dismiss-layer').onclick = () => this.dismissShot();
     if (this.opts.menuLabel) q('.act-menu').textContent = this.opts.menuLabel;
 
@@ -122,6 +132,8 @@ export class PlayUI {
     this.detector.stopCamera();
     this.cameraReady = false;
     this.keepAwake(false);
+    this.pointsOpen = false;
+    this.q('.pt-panel').classList.add('hidden');
     this.root.classList.remove('on');
   }
 
@@ -155,6 +167,67 @@ export class PlayUI {
     }
   }
 
+  togglePoints(force) {
+    this.pointsOpen = force === undefined ? !this.pointsOpen : force;
+    this.q('.pt-panel').classList.toggle('hidden', !this.pointsOpen);
+    if (this.pointsOpen) this.renderPoints();
+  }
+
+  // 據點即時狀態:QR 貼紙本身是死的,狀態只能在這裡看
+  renderPoints() {
+    if (!this.active || !this.pointsOpen) return;
+    const room = this.game.room;
+    if (!room) return;
+    const cfg = room.config || DEFAULTS;
+    const mine = this.game.myTeam();
+    const now = Date.now();
+    const pts = Object.entries(room.points || {}).sort(([a], [b]) => a.localeCompare(b));
+
+    const ul = this.q('.pt-list');
+    if (!pts.length) {
+      ul.innerHTML = '<li class="pt-empty">本場沒有啟用任何據點</li>';
+      this.q('.pt-foot').textContent = '';
+      return;
+    }
+
+    let held = 0, total = 0;
+    ul.innerHTML = pts.map(([mid, p]) => {
+      const isChest = p.type === 'chest';
+      const cd = (isChest ? cfg.chestCooldownSec : cfg.captureCooldownSec) * 1000;
+      const left = p.lastAt ? Math.max(0, cd - (now - p.lastAt)) : 0;
+      const owner = p.owner && room.teams[p.owner];
+      if (!isChest) { total++; if (p.owner === mine) held++; }
+
+      let state, cls;
+      if (left > 0) {
+        state = `冷卻 ${Math.ceil(left / 1000)}s`; cls = 'cooling';
+      } else if (isChest) {
+        state = '可開啟'; cls = 'ready';
+      } else if (!owner) {
+        state = '無人佔領'; cls = 'ready';
+      } else if (p.owner === mine) {
+        state = '我方持有'; cls = 'own';
+      } else {
+        state = `${owner.label}持有`; cls = 'enemy';
+      }
+
+      return `<li class="${cls}">
+        <span class="pt-dot" style="background:${owner ? owner.accent : 'rgba(255,255,255,.22)'}"></span>
+        <span class="pt-mid">${mid}</span>
+        <span class="pt-name">${esc(p.label)}</span>
+        <span class="pt-type">${isChest ? '寶箱' : '搶佔'}</span>
+        <span class="pt-state">${state}</span></li>`;
+    }).join('');
+
+    const regen = cfg.holdRegenPct || 0;
+    this.q('.pt-foot').innerHTML = total
+      ? `我方持有 <b>${held}/${total}</b> 個搶佔點` +
+        (regen > 0 && held > 0
+          ? ` · 每分鐘回血 <b>${(regen * held).toFixed(1)}%</b>`
+          : (regen > 0 ? ' · 佔領才會開始回血' : ''))
+      : '';
+  }
+
   renderFeed(items) {
     if (!this.active) return;
     this.q('.feed').innerHTML = items.slice(0, 6).map(f =>
@@ -175,8 +248,29 @@ export class PlayUI {
     const cd = this.game.fireCooldownLeft();
     this.q('.cooldown').textContent = cd > 0 ? `冷卻 ${(cd / 1000).toFixed(1)}s` : '';
 
+    if (this.pointsOpen) this.renderPoints();
+    this.updatePointBadge();
+
     this.q('.buffs').innerHTML = this.game.isDoubleActive()
       ? `<div class="buff">傷害加倍 ${Math.ceil((this.game.doubleUntil - this.game.now()) / 1000)}s</div>` : '';
+  }
+
+  // 按鈕上直接顯示「我方持有幾個」,不用打開面板就看得到
+  updatePointBadge() {
+    const room = this.game.room;
+    const btn = this.q('.act-points');
+    if (!room) return;
+    const mine = this.game.myTeam();
+    let held = 0, total = 0;
+    for (const p of Object.values(room.points || {})) {
+      if (p.type !== 'capture') continue;
+      total++;
+      if (p.owner === mine) held++;
+    }
+    if (!total) { btn.classList.add('hidden'); return; }
+    btn.classList.remove('hidden');
+    btn.textContent = `據點 ${held}/${total}`;
+    btn.classList.toggle('has', held > 0);
   }
 
   // ---------- 開火 ----------
@@ -264,7 +358,10 @@ export class PlayUI {
     if (!out.ok) { buzz(30); return this.opts.toast?.(out.reason); }
     buzz([40, 50, 80]);
     if (pt.type === 'chest') this.opts.modal?.(`開出「${out.reward.label}」`, `<p class="sub">${out.reward.desc}</p>`);
-    else this.opts.toast?.(`成功佔領「${out.label}」,我方 +${out.heal}`);
+    else {
+      this.opts.toast?.(`成功佔領「${out.label}」,我方 +${out.heal}`);
+      this.togglePoints(true);   // 佔領成功後直接顯示最新戰況
+    }
   }
 
   closeScan() {
